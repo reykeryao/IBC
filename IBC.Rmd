@@ -23,6 +23,7 @@ library(gplots)
 library(RColorBrewer)
 library(shape)
 library(ggfortify)
+library(pheatmap)
 library("BiocParallel")
 library("ComplexHeatmap")
 library(circlize)
@@ -31,6 +32,7 @@ library(ggpubr)
 library(VennDiagram)
 register(MulticoreParam(4))
 library(tidyr)
+library(multipanelfigure)
 load("IBC.image")
 ```
 
@@ -39,22 +41,20 @@ load("IBC.image")
 ## This section is stored in "IBC.image"
 ```{r, echo=FALSE}
 dat<-read.delim("all_IBC_cleanedup.counts")
-coldata <- data.frame(c(rep("Healthy",4),rep("FBC",4),rep("BC",4),rep("IBC",10),
-                        rep(c(rep("Healthy",16),rep("BC",6),rep("IBC",10)),2)),
-                      c(rep("H",4),rep("B",4),
-                        rep(c("BCN","BCP"),2),
-                        c("IBCP","IBCN","IBCN",rep("IBCP",6),"IBCN"),
-                        rep("H",16),
-                        c("BCN","BCP","BCP","BCN","BCN","BCP"),
-                        c("IBCP","IBCN","IBCN",rep("IBCP",6),"IBCN"),
-                        rep("H",16),
-                        c("BCN","BCP","BCP","BCN","BCN","BCP"),
-                        c("IBCP","IBCN","IBCN",rep("IBCP",6),"IBCN")),
-                      c(rep("ForzenTissue",8),rep("FFPE",14),rep("PBMC",32),rep("Plasma",32)),
+coldata <- data.frame(c(rep("Healthy",4),rep("F_nonIBC",4),rep("nonIBC",4),rep("IBC",10),
+                        rep(c(rep("Healthy",16),rep("nonIBC",6),rep("IBC",10)),2)),
+                      c(rep("H",4),rep("NA",4),
+                        rep(c("N","P"),2),
+                        c("P","N","N",rep("P",6),"N"),
+                        rep(c(rep("H",16),
+                        c("N","P","P","N","N","P"),
+                        c("P","N","N",rep("P",6),"N")),2)),
+                      c(rep("Forzen Tissue",8),rep("FFPE",14),rep("PBMC",32),rep("Plasma",32)),
                       colnames(dat)[2:87],
                       row.names=colnames(dat)[2:87])
 colnames(coldata) <- c("Disease","HR","Tissue","Name")
-
+coldata$Disease<-factor(coldata$Disease,levels=c("Healthy","F_nonIBC","nonIBC","IBC"))
+coldata$HR<-factor(coldata$HR,levels=c("H","NA","N","P"))
 #mRNA DE
 pro_dat<-dat[dat$Type=="Protein coding",]
 FFPE_dds <- DESeqDataSetFromMatrix(countData = pro_dat[,2:23],
@@ -64,32 +64,27 @@ PBMC_dds <- DESeqDataSetFromMatrix(countData = pro_dat[,24:55],
 Plasma_dds <- DESeqDataSetFromMatrix(countData = pro_dat[,56:87],
                                      colData = coldata[55:86,],design = ~Disease)
 FFPE_dds <- DESeq(FFPE_dds,parallel = T)
+FFPE_vst<-varianceStabilizingTransformation(FFPE_dds)
 PBMC_dds <- DESeq(PBMC_dds,parallel = T)
+PBMC_vst<-varianceStabilizingTransformation(PBMC_dds)
 Plasma_dds <- DESeq(Plasma_dds,parallel = T)
-FFPE_BC_HR <- DESeqDataSetFromMatrix(countData = pro_dat[,10:13],
-                                   colData = coldata[9:12,],design = ~HR)
-FFPE_IBC_HR <- DESeqDataSetFromMatrix(countData = pro_dat[,14:23],
-                                   colData = coldata[13:22,],design = ~HR)
-PBMC_BC_HR <- DESeqDataSetFromMatrix(countData = pro_dat[,40:45],
-                                   colData = coldata[39:44,],design = ~HR)
-PBMC_IBC_HR <- DESeqDataSetFromMatrix(countData = pro_dat[,46:55],
-                                   colData = coldata[45:54,],design = ~HR)
-Plasma_BC_HR <- DESeqDataSetFromMatrix(countData = pro_dat[,72:77],
-                                   colData = coldata[71:76,],design = ~HR)
-Plasma_IBC_HR <- DESeqDataSetFromMatrix(countData = pro_dat[,78:87],
-                                   colData = coldata[77:86,],design = ~HR)
-sizeFactors(FFPE_BC_HR) <- sizeFactors(FFPE_dds)[9:12]
-sizeFactors(FFPE_IBC_HR) <- sizeFactors(FFPE_dds)[13:22]
-sizeFactors(PBMC_BC_HR) <- sizeFactors(PBMC_dds)[17:22]
-sizeFactors(PBMC_IBC_HR) <- sizeFactors(PBMC_dds)[23:32]
-sizeFactors(Plasma_BC_HR) <- sizeFactors(Plasma_dds)[17:22]
-sizeFactors(Plasma_IBC_HR) <- sizeFactors(Plasma_dds)[23:32]
-FFPE_BC_HR <- DESeq(FFPE_BC_HR,parallel = T)
-FFPE_IBC_HR <- DESeq(FFPE_IBC_HR,parallel = T)
-PBMC_BC_HR <- DESeq(PBMC_BC_HR,parallel = T)
-PBMC_IBC_HR <- DESeq(PBMC_IBC_HR,parallel = T)
-Plasma_BC_HR <- DESeq(Plasma_BC_HR,parallel = T)
-Plasma_IBC_HR <- DESeq(Plasma_IBC_HR,parallel = T)
+Plasma_vst<-varianceStabilizingTransformation(Plasma_dds)
+# creat deseq objects for HR analysis using the same size factors, the vst counts will also be different by different disign.
+FFPE_HR <- DESeqDataSetFromMatrix(countData = pro_dat[,10:23],
+                                   colData = coldata[9:22,],design = ~Disease+HR+Disease:HR)
+PBMC_HR <- DESeqDataSetFromMatrix(countData = pro_dat[,40:55],
+                                   colData = coldata[39:54,],design = ~Disease+HR+Disease:HR)
+Plasma_HR <- DESeqDataSetFromMatrix(countData = pro_dat[,72:87],
+                                   colData = coldata[71:86,],design = ~Disease+HR+Disease:HR)
+sizeFactors(FFPE_HR) <- sizeFactors(FFPE_dds)[9:22]
+sizeFactors(PBMC_HR) <- sizeFactors(PBMC_dds)[17:32]
+sizeFactors(Plasma_HR) <- sizeFactors(Plasma_dds)[17:32]
+FFPE_HR <- DESeq(FFPE_HR,parallel = T)
+FFPE_HR_vst <- varianceStabilizingTransformation(FFPE_HR)
+PBMC_HR <- DESeq(PBMC_HR,parallel = T)
+PBMC_HR_vst <- varianceStabilizingTransformation(PBMC_HR)
+Plasma_HR <- DESeq(Plasma_HR,parallel = T)
+Plasma_HR_vst <- varianceStabilizingTransformation(Plasma_HR)
 #sncRNA DE
 snc_dat<-dat[dat$Type=="sncRNA"|dat$Type=="miRNA",]
 snc_dat$Type2<-droplevels(snc_dat$Type2)
@@ -100,32 +95,27 @@ PBMC_snc_dds <- DESeqDataSetFromMatrix(countData = snc_dat[,24:55],
 Plasma_snc_dds <- DESeqDataSetFromMatrix(countData = snc_dat[,56:87], 
                                          colData = coldata[55:86,],design = ~Disease)
 FFPE_snc_dds <- DESeq(FFPE_snc_dds,parallel = T)
+FFPE_snc_vst<-varianceStabilizingTransformation(FFPE_snc_dds)
 PBMC_snc_dds <- DESeq(PBMC_snc_dds,parallel = T)
+PBMC_snc_vst<-varianceStabilizingTransformation(PBMC_snc_dds)
 Plasma_snc_dds <- DESeq(Plasma_snc_dds,parallel = T)
-FFPE_BC_snc_HR <- DESeqDataSetFromMatrix(countData = snc_dat[,10:13],
-                                     colData = coldata[9:12,],design = ~HR)
-FFPE_IBC_snc_HR <- DESeqDataSetFromMatrix(countData = snc_dat[,14:23],
-                                      colData = coldata[13:22,],design = ~HR)
-PBMC_BC_snc_HR <- DESeqDataSetFromMatrix(countData = snc_dat[,40:45],
-                                     colData = coldata[39:44,],design = ~HR)
-PBMC_IBC_snc_HR <- DESeqDataSetFromMatrix(countData = snc_dat[,46:55],
-                                      colData = coldata[45:54,],design = ~HR)
-Plasma_BC_snc_HR <- DESeqDataSetFromMatrix(countData = snc_dat[,72:77],
-                                       colData = coldata[71:76,],design = ~HR)
-Plasma_IBC_snc_HR <- DESeqDataSetFromMatrix(countData = snc_dat[,78:87],
-                                        colData = coldata[77:86,],design = ~HR)
-sizeFactors(FFPE_BC_snc_HR) <- sizeFactors(FFPE_snc_dds)[9:12]
-sizeFactors(FFPE_IBC_snc_HR) <- sizeFactors(FFPE_snc_dds)[13:22]
-sizeFactors(PBMC_BC_snc_HR) <- sizeFactors(PBMC_snc_dds)[17:22]
-sizeFactors(PBMC_IBC_snc_HR) <- sizeFactors(PBMC_snc_dds)[23:32]
-sizeFactors(Plasma_BC_snc_HR) <- sizeFactors(Plasma_snc_dds)[17:22]
-sizeFactors(Plasma_IBC_snc_HR) <- sizeFactors(Plasma_snc_dds)[23:32]
-FFPE_BC_snc_HR <- DESeq(FFPE_BC_snc_HR,parallel = T)
-FFPE_IBC_snc_HR <- DESeq(FFPE_IBC_snc_HR,parallel = T)
-PBMC_BC_snc_HR <- DESeq(PBMC_BC_snc_HR,parallel = T)
-PBMC_IBC_snc_HR <- DESeq(PBMC_IBC_snc_HR,parallel = T)
-Plasma_BC_snc_HR <- DESeq(Plasma_BC_snc_HR,parallel = T)
-Plasma_IBC_snc_HR <- DESeq(Plasma_IBC_snc_HR,parallel = T)
+Plasma_snc_vst<-varianceStabilizingTransformation(Plasma_snc_dds)
+
+FFPE_snc_HR <- DESeqDataSetFromMatrix(countData = snc_dat[,10:23],
+                                     colData = coldata[9:22,],design = ~Disease+HR+Disease:HR)
+PBMC_snc_HR <- DESeqDataSetFromMatrix(countData = snc_dat[,40:55],
+                                     colData = coldata[39:54,],design = ~Disease+HR+Disease:HR)
+Plasma_snc_HR <- DESeqDataSetFromMatrix(countData = snc_dat[,72:87],
+                                       colData = coldata[71:86,],design = ~Disease+HR+Disease:HR)
+sizeFactors(FFPE_snc_HR) <- sizeFactors(FFPE_snc_dds)[9:22]
+sizeFactors(PBMC_snc_HR) <- sizeFactors(PBMC_snc_dds)[17:32]
+sizeFactors(Plasma_snc_HR) <- sizeFactors(Plasma_snc_dds)[17:32]
+FFPE_snc_HR <- DESeq(FFPE_snc_HR,parallel = T)
+FFPE_snc_HR_vst <- varianceStabilizingTransformation(FFPE_snc_HR)
+PBMC_snc_HR <- DESeq(PBMC_snc_HR,parallel = T)
+PBMC_snc_HR_vst <- varianceStabilizingTransformation(PBMC_snc_HR)
+Plasma_snc_HR <- DESeq(Plasma_snc_HR,parallel = T)
+Plasma_snc_HR_vst <- varianceStabilizingTransformation(Plasma_snc_HR)
 
 #function for volcano plot
 plot_volcano<-function(dat_non_sig,dat_sig,x_lim,y_lim,xlab_seq,
@@ -155,371 +145,600 @@ plot_volcano<-function(dat_non_sig,dat_sig,x_lim,y_lim,xlab_seq,
 mcol<-c("black","red")
 scol<-brewer.pal(9, "Set1")
 pcol<-brewer.pal(4,"Paired")
+#simplified volcano for TIFF output
+plot_volcanoS<-function(dat_non_sig,dat_sig,x_lim,y_lim,xlab_seq,ylab_seq,type){
+  plot(dat_non_sig$log2FoldChange, -log10(dat_non_sig$padj),xlim=x_lim,ylim=y_lim,
+       main=NA, xlab=NA,xaxt="n",bty="n", yaxt="n",
+       ylab=NA,col=mcol[1],
+       pch=20, cex=0.2)
+  axis(side = 1,at = xlab_seq,labels = NA,tck=-0.02,lwd=0.5)
+  axis(side = 2,labels = NA,at = ylab_seq,las=1,tck=-0.02,lwd=0.5)
+  abline(v=0, col="black", lty=3, lwd=0.5)
+  abline(v=-2, col="black", lty=4, lwd=0.5)
+  abline(v=2, col="black", lty=4, lwd=0.5)
+  abline(h=-log10(0.001), col="black", lty=3, lwd=0.5)
+  if (type=="pro"){
+    points(dat_sig$log2FoldChange,-log10(dat_sig$padj), pch=20, col=mcol[2], cex=0.2)
+  } else if (type=="snc") {
+    points(dat_sig$log2FoldChange,-log10(dat_sig$padj), pch=21, 
+           bg=scol[dat_sig$Type2], cex=0.2,lwd=0.2)
+  }
+}
+```
+```{r}
+# generate results for pair-wise comparason
+# Between diseases/tissues/HR
+# function of generate results
+# Combins all result dataframes to a list
+res_convert<-function(comp_arg, pro_odj, snc_obj){
+  res<-data.frame(results(pro_odj,contrast = comp_arg, alpha = 0.05))
+  res<-cbind(res,pro_dat[,c(1,89)])
+  res_snc<-data.frame(results(snc_obj,contrast = comp_arg, alpha = 0.05))
+  res_snc<-cbind(res_snc,snc_dat[,c(1,89)])
+  res<-rbind(res,res_snc)
+  res<-res[complete.cases(res),]
+  res$log10padj<-log10(1/res$padj)
+  return(res)
+}
+#  01-06, FFPE_dds and FFPE_snc_dds
+# 01. Frozen tissue; nonIBC vs Healthy (4:4)
+comp <- c("Disease","F_nonIBC","Healthy")
+comp_res<-list(res_01=res_convert(comp, FFPE_dds, FFPE_snc_dds))
+
+# 02 FFPE; IBC vs nonIBC (10:4)
+comp <- c("Disease","IBC","nonIBC")
+comp_res$res_02<-res_convert(comp, FFPE_dds, FFPE_snc_dds)
+
+# 03 FFPE IBC vs Frozen Healthy (10:4)
+comp <- c("Disease","IBC","Healthy")
+comp_res$res_03<-res_convert(comp, FFPE_dds, FFPE_snc_dds)
+
+# 04 FFPE IBC vs Frozen nonIBC (10:4)
+comp <- c("Disease","IBC","F_nonIBC")
+comp_res$res_04<-res_convert(comp, FFPE_dds, FFPE_snc_dds)
+
+# 05 FFPE nonIBC vs Frozen Healthy (4:4)
+comp <- c("Disease","nonIBC","Healthy")
+comp_res$res_05<-res_convert(comp, FFPE_dds, FFPE_snc_dds)
+
+# 06 FFPE nonIBC vs Frozen nonIBC (4:4)
+comp <- c("Disease","nonIBC","F_nonIBC")
+comp_res$res_06<-res_convert(comp, FFPE_dds, FFPE_snc_dds)
+
+# 07-09, PBMC_dds and PBMC_snc_dds
+# 07 PBMC IBC vs Healthy (10:16)
+comp <- c("Disease","IBC","Healthy")
+comp_res$res_07<-res_convert(comp, PBMC_dds, PBMC_snc_dds)
+
+# 08 PBMC IBC vs nonIBC (10:6)
+comp <- c("Disease","IBC","nonIBC")
+comp_res$res_08<-res_convert(comp, PBMC_dds, PBMC_snc_dds)
+
+# 09 PBMC nonIBC vs Healthy (6:16)
+comp <- c("Disease","nonIBC","Healthy")
+comp_res$res_09<-res_convert(comp, PBMC_dds, PBMC_snc_dds)
+
+# 10-12, Plasma_dds and Plasma_snc_dds
+# 10 Plasma IBC vs Healthy (10:16)
+comp <- c("Disease","IBC","Healthy")
+comp_res$res_10<-res_convert(comp, Plasma_dds, Plasma_snc_dds)
+
+# 11 Plasma IBC vs nonIBC (10:6)
+comp <- c("Disease","IBC","nonIBC")
+comp_res$res_11<-res_convert(comp, Plasma_dds, Plasma_snc_dds)
+
+# 12 Plasma nonIBC vs Healthy (6:16)
+comp <- c("Disease","nonIBC","Healthy")
+comp_res$res_12<-res_convert(comp, Plasma_dds, Plasma_snc_dds)
+
+# HR results HR+ vs HR-
+# HR_01, FFPE nonIBC
+# as shown by resultsNames, the main effect is HR+ vs HR- in nonIBC
+comp <- c("HR","P","N")
+comp_res$HR_01 <- res_convert(comp, FFPE_HR, FFPE_snc_HR)
+# HR_02, FFPE IBC
+# use the list of contrast to get IBC HR+ vs HR-
+comp <- list(c("HR_P_vs_N","DiseaseIBC.HRP"))
+comp_res$HR_02 <- res_convert(comp, FFPE_HR, FFPE_snc_HR)
+
+# HR_03, PBMC nonIBC
+comp <- c("HR","P","N")
+comp_res$HR_03 <- res_convert(comp, PBMC_HR, PBMC_snc_HR)
+# HR_04, PBMC IBC
+comp <- list(c("HR_P_vs_N","DiseaseIBC.HRP"))
+comp_res$HR_04 <- res_convert(comp, PBMC_HR, PBMC_snc_HR)
+
+# HR_05, Plasma nonIBC
+comp <- c("HR","P","N")
+comp_res$HR_05 <- res_convert(comp, Plasma_HR, Plasma_snc_HR)
+# HR_06, Plasma IBC
+comp <- list(c("HR_P_vs_N","DiseaseIBC.HRP"))
+comp_res$HR_06 <- res_convert(comp, Plasma_HR, Plasma_snc_HR)
+
+# combined vst counts for heatmap
+comp_vst<-list(FFPE=rbind(assay(FFPE_vst),assay(FFPE_snc_vst)))
+comp_vst$PBMC<-rbind(assay(PBMC_vst),assay(PBMC_snc_vst))
+comp_vst$Plasma<-rbind(assay(Plasma_vst),assay(Plasma_snc_vst))
+comp_vst$FFPE_HR<-rbind(assay(FFPE_HR_vst),assay(FFPE_snc_HR_vst))
+comp_vst$PBMC_HR<-rbind(assay(PBMC_HR_vst),assay(PBMC_snc_HR_vst))
+comp_vst$Plasma_HR<-rbind(assay(Plasma_HR_vst),assay(Plasma_snc_HR_vst))
+
 save.image("IBC.image")
 ```
 ## plot the volano for pair-wise comparason
 ```{r, echo=FALSE}
-pdf("IBC_volcano.pdf",height=6,width=15,onefile = T)
-#postscript("IBC_volcano.eps",onefile = T, paper="US)
-par(mfrow=c(1,3))
-#Forzen BC vs Healthy
-res<-data.frame(results(FFPE_dds,contrast = c("Disease","FBC","Healthy"),alpha = 0.05))
-res<-cbind(res,pro_dat[,c(1,89)])
-res<-res[complete.cases(res),]
-res$log10padj<-log10(1/res$padj)
-non_sig<-subset(res, padj>0.001 | abs(log2FoldChange)<2)
-sig<-subset(res, padj<=0.001 & abs(log2FoldChange)>=2)
-plot_volcano(non_sig,sig,c(-20,20),c(0,20),seq(-20,20,5),seq(0,20,5),
-             "mRNA (Forzen tissue: nonBC vs Healthy)","pro",-20,20)
-sig_list<-c(16 , 26 , 29,  58, 137 ,145 ,157, 164)
-text(sig[sig_list,c(2,9)],pos=3,offset=0.15,labels = sig[sig_list,7],cex=0.7)
-sig_list<-c(21,22,92,129)
-text(sig[sig_list,c(2,9)],pos=2,offset=0.15,labels = sig[sig_list,7],cex=0.7)
-sig_list<-c(62,126,170)
-text(sig[sig_list,c(2,9)],pos=4,offset=0.15,labels = sig[sig_list,7],cex=0.7)
+# map name of comparason to res or HR
+# 01. Frozen tissue; nonIBC vs Healthy (4:4)
+# 02 FFPE; IBC vs nonIBC (10:4)
+# 03 FFPE IBC vs Frozen Healthy (10:4)
+# 04 FFPE IBC vs Frozen nonIBC (10:4)
+# 05 FFPE nonIBC vs Frozen Healthy (4:4)
+# 06 FFPE nonIBC vs Frozen nonIBC (4:4)
+# 07 PBMC IBC vs Healthy (10:16)
+# 08 PBMC IBC vs nonIBC (10:6)
+# 09 PBMC nonIBC vs Healthy (6:16)
+# 10 Plasma IBC vs Healthy (10:16)
+# 11 Plasma IBC vs nonIBC (10:6)
+# 12 Plasma nonIBC vs Healthy (6:16)
+# HR results HR+ vs HR-
+# HR_01, FFPE nonIBC
+# HR_02, FFPE IBC
+# HR_03, PBMC nonIBC
+# HR_04, PBMC IBC
+# HR_05, Plasma nonIBC
+# HR_06, Plasma IBC
+comb_name<-c("Frozen tissue: nonIBC vs Healthy", "FFPE: IBC vs nonIBC", "FFPE IBC vs Frozen Healthy",
+             "FFPE IBC vs Frozen nonIBC", "FFPE nonIBC vs Frozen Healthy","FFPE nonIBC vs Frozen nonIBC",
+             "PBMC: IBC vs Healthy", "PBMC: IBC vs nonIBC","PBMC: nonIBC vs Healthy",
+             "Plasma: IBC vs Healthy", "Plasma: IBC vs nonIBC","Plasma: nonIBC vs Healthy",
+             "FFPE nonIBC: HR+ vs HR-", "FFPE IBC: HR+ vs HR-", "PBMC nonIBC: HR+ vs HR-",
+             "PBMC IBC: HR+ vs HR-", "Plasma nonIBC: HR+ vs HR-","Plasma IBC: HR+ vs HR-")
+file_name<-c("Frozen_nonIBC_H","FFPE_IBC_nonIBC","FFPE_IBC_Frozen_H","FFPE_IBC_Frozen_nonIBC",
+             "FFPE_nonIBC_Frozen_H","FFPE_nonIBC_Frozen_nonIBC","PBMC_IBC_H","PBMC_IBC_nonIBC",
+             "PBMC_nonIBC_H","Plasma_IBC_H","Plasma_IBC_nonIBC","Plasma_nonIBC_H","HR_FFPE_nonIBC",
+             "HR_FFPE_IBC","HR_PBMC_nonIBC","HR_PBMC_IBC","HR_Plasma_nonIBC","HR_Plasma_IBC")
+tiff_name<-paste0(file_name,".tiff")
+# Tiff plots without label
+# Frozen  nonIBC vs Healthy
+tiff(tiff_name[1],units = "px",res = 300,height=500,width=800)
+par(mfrow=c(1,2),mar = c(1, 1, 0.1, 0.1))
+pro<-subset(comp_res[[1]],Type2=="Protein coding")
+non_sig<-subset(pro, padj>0.001 | abs(log2FoldChange)<2)
+sig<-subset(pro, padj<=0.001 & abs(log2FoldChange)>=2)
+plot_volcanoS(non_sig,sig,c(-20,20),c(0,15),seq(-20,20,5),seq(0,15,5),"pro")
 
-res<-data.frame(results(FFPE_snc_dds,contrast = c("Disease","FBC","Healthy"),alpha = 0.05))
-res<-cbind(res,snc_dat[,c(1,89)])
-res<-res[complete.cases(res),]
-res$log10padj<-log10(1/res$padj)
-non_sig<-subset(res, padj>0.001 | abs(log2FoldChange)<2)
-sig<-subset(res, padj<=0.001 & abs(log2FoldChange)>=2)
-plot_volcano(non_sig,sig,c(-10,25),c(0,30),seq(-10,25,5),seq(0,30,10),
-             "sncRNA (Forzen tissue: nonBC vs Healthy)","snc",-10,30)
-text(sig[c(4,5,10,12,26,31,42),c(2,9)],pos=3,offset=0.15,labels = sig[c(4,5,10,12,26,31,42),7],cex=0.7)
-text(sig[c(7,14,18,21,27),c(2,9)],pos=2,offset=0.15,labels = sig[c(7,14,18,21,27),7],cex=0.7)
-text(sig[c(3,36),c(2,9)],pos=2,offset=0.15,labels = sig[c(3,36),7],cex=0.7)
-
-plot.new()
+snc<-subset(comp_res[[1]],Type2!="Protein coding")
+snc$Type2<-droplevels(snc$Type2)
+non_sig<-subset(snc, padj>0.001 | abs(log2FoldChange)<2)
+heat_sig<-rbind(sig,subset(snc, padj<=0.001 & abs(log2FoldChange)>=2))
+sig<-subset(snc, padj<=0.001 & abs(log2FoldChange)>=2)
+plot_volcanoS(non_sig,sig,c(-10,25),c(0,30),seq(-10,25,5),seq(0,30,10),"snc")
+dev.off()
+#heatmap
+mat<-merge(comp_vst$FFPE,heat_sig,by=0)
+mat<-mat[,c(2:9,24:32)]
+mat[,1:8]<-mat[,1:8]-rowMeans(mat[,1:8])
+mat<-mat[order(mat$log2FoldChange,decreasing = T),]
+pdf(paste0(file_name[1],"_heatmap.pdf"),height=16,width=4)
+pheatmap(as.matrix(mat[,c(1:8)]), annotation_col = coldata[,1:2],cluster_rows = F,fontsize_row =5,
+                cluster_cols = F,labels_row = mat$Name, show_colnames = F)
+dev.off()
 
 #FFPE IBC vs BC
-res<-data.frame(results(FFPE_dds,contrast = c("Disease","IBC","BC"),alpha = 0.05))
-res<-cbind(res,pro_dat[,c(1,89)])
-res<-res[complete.cases(res),]
-res$log10padj<-log10(1/res$padj)
-non_sig<-subset(res, padj>0.001 | abs(log2FoldChange)<2)
-sig<-subset(res, padj<=0.001 & abs(log2FoldChange)>=2)
-plot_volcano(non_sig,sig,c(-10,10),c(0,15),seq(-10,10,5),seq(0,15,3),
-             "mRNA (FFPE: IBC vs nonIBC)","pro",-10,15)
-sig_list<-c(1,4,12,17,23)
-text(sig[sig_list,c(2,9)],pos=3,offset=0.15,labels = sig[sig_list,7],cex=0.7)
-sig_list<-c(2,22)
-text(sig[sig_list,c(2,9)],pos=1,offset=0.15,labels = sig[sig_list,7],cex=0.7)
+tiff(tiff_name[2],units = "px",res = 300,height=500,width=800)
+par(mfrow=c(1,2),mar = c(1, 1, 0.1, 0.1))
+pro<-subset(comp_res[[2]],Type2=="Protein coding")
+non_sig<-subset(pro, padj>0.001 | abs(log2FoldChange)<2)
+sig<-subset(pro, padj<=0.001 & abs(log2FoldChange)>=2)
+plot_volcanoS(non_sig,sig,c(-10,25),c(0,12),seq(-10,25,5),seq(0,12,3),"pro")
 
-res<-data.frame(results(FFPE_snc_dds,contrast = c("Disease","IBC","BC"),alpha = 0.05))
-res<-cbind(res,snc_dat[,c(1,89)])
-res<-res[complete.cases(res),]
-res$log10padj<-log10(1/res$padj)
-non_sig<-subset(res, padj>0.001 | abs(log2FoldChange)<2)
-sig<-subset(res, padj<=0.001 & abs(log2FoldChange)>=2)
-plot_volcano(non_sig,sig,c(-25,10),c(0,9),seq(-25,10,5),seq(0,9,3),
-             "sncRNA (FFPE: IBC vs nonIBC)","snc",-20,9)
-text(sig[,c(2,9)],pos=3,offset=0.15,labels = sig[,7],cex=0.7)
+snc<-subset(comp_res[[2]],Type2!="Protein coding")
+snc$Type2<-droplevels(snc$Type2)
+non_sig<-subset(snc, padj>0.001 | abs(log2FoldChange)<2)
+heat_sig<-rbind(sig,subset(snc, padj<=0.001 & abs(log2FoldChange)>=2))
+sig<-subset(snc, padj<=0.001 & abs(log2FoldChange)>=2)
+plot_volcanoS(non_sig,sig,c(-30,10),c(0,12),seq(-30,10,5),seq(0,12,3),"snc")
+dev.off()
+#heatmap
+mat<-merge(comp_vst$FFPE,heat_sig,by=0)
+mat<-mat[,c(10,12,11,13,15,16,23,14,17:22,24:32)]
+mat[,1:14]<-mat[,1:14]-rowMeans(mat[,1:14])
+mat<-mat[order(mat$log2FoldChange,decreasing = T),]
+pdf(paste0(file_name[2],"_heatmap.pdf"),height=3,width=4)
+pheatmap(as.matrix(mat[,1:14]), annotation_col = coldata[,1:2],cluster_rows = F,
+         fontsize_row =5, cluster_cols = F,labels_row = mat$Name, show_colnames = F)
+dev.off()
 
-plot.new()
-#PBMC mRNA
-res<-data.frame(results(PBMC_dds,contrast = c("Disease","IBC","Healthy"),alpha = 0.05))
-res<-cbind(res,pro_dat[,c(1,89)])
-res<-res[complete.cases(res),]
-res$log10padj<-log10(1/res$padj)
-non_sig<-subset(res, padj>0.001 | abs(log2FoldChange)<2)
-sig<-subset(res, padj<=0.001 & abs(log2FoldChange)>=2)
-plot_volcano(non_sig,sig,c(-10,10),c(0,60),seq(-10,10,5),seq(0,60,10),
-             "mRNA (PBMC: IBC vs Healthy)","pro",-10,60)
-sig_list<-c(4,115,229,251,274,300)
-text(sig[sig_list,c(2,9)],pos=3,offset=0.15,labels = sig[sig_list,7],cex=0.7)
-text(sig[126,c(2,9)],pos=4,offset=0.15,labels = sig[126,7],cex=0.7)
-text(sig[2,c(2,9)],pos=2,offset=0.15,labels = sig[2,7],cex=0.7)
-text(sig[205,c(2,9)],pos=2,offset=0.15,labels = sig[205,7],cex=0.7)
+#FFPE  IBC vs Forzen Healthy
+tiff(tiff_name[3],units = "px",res = 300,height=500,width=800)
+par(mfrow=c(1,2),mar = c(1, 1, 0.1, 0.1))
+pro<-subset(comp_res[[3]],Type2=="Protein coding")
+non_sig<-subset(pro, padj>0.001 | abs(log2FoldChange)<2)
+sig<-subset(pro, padj<=0.001 & abs(log2FoldChange)>=2)
+plot_volcanoS(non_sig,sig,c(-10,20),c(0,9),seq(-10,20,5),seq(0,9,3),"pro")
 
-res<-data.frame(results(PBMC_dds,contrast = c("Disease","IBC","BC"),alpha = 0.05))
-res<-cbind(res,pro_dat[,c(1,89)])
-res<-res[complete.cases(res),]
-res$log10padj<-log10(1/res$padj)
-non_sig<-subset(res, padj>0.001 | abs(log2FoldChange)<2)
-sig<-subset(res, padj<=0.001 & abs(log2FoldChange)>=2)
-plot_volcano(non_sig,sig,c(-10,10),c(0,60),seq(-10,10,5),seq(0,60,10),
-             "mRNA (PBMC: IBC vs nonIBC)","pro",-10,60)
-sig_list<-c(39,76,93,97,98,109,147,166)
-text(sig[sig_list,c(2,9)],pos=3,offset=0.15,labels = sig[sig_list,7],cex=0.7)
-text(sig[119,c(2,9)],pos=1,offset=0.15,labels = sig[119,7],cex=0.7)
+snc<-subset(comp_res[[3]],Type2!="Protein coding")
+snc$Type2<-droplevels(snc$Type2)
+non_sig<-subset(snc, padj>0.001 | abs(log2FoldChange)<2)
+heat_sig<-rbind(sig,subset(snc, padj<=0.001 & abs(log2FoldChange)>=2))
+sig<-subset(snc, padj<=0.001 & abs(log2FoldChange)>=2)
+plot_volcanoS(non_sig,sig,c(-10,25),c(0,30),seq(-10,25,5),seq(0,30,10),"snc")
+dev.off()
+#heatmep
+mat<-merge(comp_vst$FFPE,heat_sig,by=0)
+mat<-mat[,c(2:5,15,16,23,14,17:22,24:32)]
+mat[,1:14]<-mat[,1:14]-rowMeans(mat[,1:14])
+mat<-mat[order(mat$log2FoldChange,decreasing = T),]
+pdf(paste0(file_name[3],"_heatmap.pdf"),height=4,width=4)
+pheatmap(as.matrix(mat[,1:14]), annotation_col = coldata[,1:2],cluster_rows = F,
+         fontsize_row =5, cluster_cols = F,labels_row = mat$Name, show_colnames = F)
+dev.off()
+
+#FFPE  IBC vs Forzen nonIBC
+tiff(tiff_name[4],units = "px",res = 300,height=500,width=800)
+par(mfrow=c(1,2),mar = c(1, 1, 0.1, 0.1))
+pro<-subset(comp_res[[4]],Type2=="Protein coding")
+non_sig<-subset(pro, padj>0.001 | abs(log2FoldChange)<2)
+sig<-subset(pro, padj<=0.001 & abs(log2FoldChange)>=2)
+plot_volcanoS(non_sig,sig,c(-10,20),c(0,15),seq(-10,20,5),seq(0,15,3),"pro")
+
+snc<-subset(comp_res[[4]],Type2!="Protein coding")
+snc$Type2<-droplevels(snc$Type2)
+non_sig<-subset(snc, padj>0.001 | abs(log2FoldChange)<2)
+heat_sig<-rbind(sig,subset(snc, padj<=0.001 & abs(log2FoldChange)>=2))
+sig<-subset(snc, padj<=0.001 & abs(log2FoldChange)>=2)
+plot_volcanoS(non_sig,sig,c(-30,10),c(0,70),seq(-30,10,5),seq(0,70,10),"snc")
+dev.off()
+#heatmep
+mat<-merge(comp_vst$FFPE,heat_sig,by=0)
+mat<-mat[,c(6:9,15,16,23,14,17:22,24:32)]
+mat[,1:14]<-mat[,1:14]-rowMeans(mat[,1:14])
+mat<-mat[order(mat$log2FoldChange,decreasing = T),]
+pdf(paste0(file_name[4],"_heatmap.pdf"),height=20,width=4)
+pheatmap(as.matrix(mat[,1:14]), annotation_col = coldata[,1:2],cluster_rows = F,
+         fontsize_row =5, cluster_cols = F,labels_row = mat$Name, show_colnames = F)
+dev.off()
+
+#FFPE  nonIBC vs Forzen Healthy
+tiff(tiff_name[5],units = "px",res = 300,height=500,width=800)
+par(mfrow=c(1,2),mar = c(1, 1, 0.1, 0.1))
+pro<-subset(comp_res[[5]],Type2=="Protein coding")
+non_sig<-subset(pro, padj>0.001 | abs(log2FoldChange)<2)
+sig<-subset(pro, padj<=0.001 & abs(log2FoldChange)>=2)
+plot_volcanoS(non_sig,sig,c(-20,25),c(0,15),seq(-20,25,5),seq(0,15,3),"pro")
+
+snc<-subset(comp_res[[5]],Type2!="Protein coding")
+snc$Type2<-droplevels(snc$Type2)
+non_sig<-subset(snc, padj>0.001 | abs(log2FoldChange)<2)
+heat_sig<-rbind(sig,subset(snc, padj<=0.001 & abs(log2FoldChange)>=2))
+sig<-subset(snc, padj<=0.001 & abs(log2FoldChange)>=2)
+plot_volcanoS(non_sig,sig,c(-15,25),c(0,15),seq(-15,25,5),seq(0,15,3),"snc")
+dev.off()
+#heatmap
+mat<-merge(comp_vst$FFPE,heat_sig,by=0)
+mat<-mat[,c(2:5,10,12,11,13,24:32)]
+mat[,1:8]<-mat[,1:8]-rowMeans(mat[,1:8])
+mat<-mat[order(mat$log2FoldChange,decreasing = T),]
+pdf(paste0(file_name[5],"_heatmap.pdf"),height=7,width=4)
+pheatmap(as.matrix(mat[,1:8]), annotation_col = coldata[,1:2],cluster_rows = F,
+         fontsize_row =5, cluster_cols = F,labels_row = mat$Name, show_colnames = F)
+dev.off()
+
+#FFPE  nonIBC vs Forzen nonIBC
+tiff(tiff_name[6],units = "px",res = 300,height=500,width=800)
+par(mfrow=c(1,2),mar = c(1, 1, 0.1, 0.1))
+pro<-subset(comp_res[[6]],Type2=="Protein coding")
+non_sig<-subset(pro, padj>0.001 | abs(log2FoldChange)<2)
+sig<-subset(pro, padj<=0.001 & abs(log2FoldChange)>=2)
+plot_volcanoS(non_sig,sig,c(-25,30),c(0,9),seq(-25,30,5),seq(0,9,3),"pro")
+
+snc<-subset(comp_res[[6]],Type2!="Protein coding")
+snc$Type2<-droplevels(snc$Type2)
+non_sig<-subset(snc, padj>0.001 | abs(log2FoldChange)<2)
+heat_sig<-rbind(sig,subset(snc, padj<=0.001 & abs(log2FoldChange)>=2))
+sig<-subset(snc, padj<=0.001 & abs(log2FoldChange)>=2)
+plot_volcanoS(non_sig,sig,c(-10,10),c(0,40),seq(-10,10,10),seq(0,40,10),"snc")
+dev.off()
+#heatmap
+mat<-merge(comp_vst$FFPE,heat_sig,by=0)
+mat<-mat[,c(6:9,10,12,11,13,24:32)]
+mat[,1:8]<-mat[,1:8]-rowMeans(mat[,1:8])
+mat<-mat[order(mat$log2FoldChange,decreasing = T),]
+pdf(paste0(file_name[6],"_heatmap.pdf"),height=9,width=4)
+pheatmap(as.matrix(mat[,1:8]), annotation_col = coldata[,1:2],cluster_rows = F,
+         fontsize_row =5, cluster_cols = F,labels_row = mat$Name, show_colnames = F)
+dev.off()
+
+#PBMC IBC vs Healthy
+tiff(tiff_name[7],units = "px",res = 300,height=500,width=800)
+par(mfrow=c(1,2),mar = c(1, 1, 0.1, 0.1))
+pro<-subset(comp_res[[7]],Type2=="Protein coding")
+non_sig<-subset(pro, padj>0.001 | abs(log2FoldChange)<2)
+sig<-subset(pro, padj<=0.001 & abs(log2FoldChange)>=2)
+plot_volcanoS(non_sig,sig,c(-10,10),c(0,60),seq(-10,10,5),seq(0,60,15),"pro")
+
+snc<-subset(comp_res[[7]],Type2!="Protein coding")
+snc$Type2<-droplevels(snc$Type2)
+non_sig<-subset(snc, padj>0.001 | abs(log2FoldChange)<2)
+heat_sig<-rbind(sig,subset(snc, padj<=0.001 & abs(log2FoldChange)>=2))
+sig<-subset(snc, padj<=0.001 & abs(log2FoldChange)>=2)
+plot_volcanoS(non_sig,sig,c(-10,10),c(0,75),seq(-10,10,5),seq(0,75,15),"snc")
+dev.off()
+#heatmap
+mat<-merge(comp_vst$PBMC,heat_sig,by=0)
+mat<-mat[,c(2:17,25,26,33,24,27:32,34:42)]
+mat[,1:26]<-mat[,1:26]-rowMeans(mat[,1:26])
+mat<-mat[order(mat$log2FoldChange,decreasing = T),]
+pdf(paste0(file_name[7],"_heatmap.pdf"),height=28,width=6)
+pheatmap(as.matrix(mat[,1:26]), annotation_col = coldata[,1:2],cluster_rows = F,
+         fontsize_row =5, cluster_cols = F,labels_row = mat$Name, show_colnames = F)
+dev.off()
+
+#PBMC IBC vs nonIBC
+tiff(tiff_name[8],units = "px",res = 300,height=500,width=800)
+par(mfrow=c(1,2),mar = c(1, 1, 0.1, 0.1))
+pro<-subset(comp_res[[8]],Type2=="Protein coding")
+non_sig<-subset(pro, padj>0.001 | abs(log2FoldChange)<2)
+sig<-subset(pro, padj<=0.001 & abs(log2FoldChange)>=2)
+plot_volcanoS(non_sig,sig,c(-10,10),c(0,60),seq(-10,10,5),seq(0,60,15),"pro")
+
+snc<-subset(comp_res[[8]],Type2!="Protein coding")
+snc$Type2<-droplevels(snc$Type2)
+non_sig<-subset(snc, padj>0.001 | abs(log2FoldChange)<2)
+heat_sig<-rbind(sig,subset(snc, padj<=0.001 & abs(log2FoldChange)>=2))
+sig<-subset(snc, padj<=0.001 & abs(log2FoldChange)>=2)
+plot_volcanoS(non_sig,sig,c(-10,15),c(0,60),seq(-10,15,5),seq(0,60,15),"snc")
+dev.off()
+#heatmap
+mat<-merge(comp_vst$PBMC,heat_sig,by=0)
+mat<-mat[,c(18,21,22,19,20,23,25,26,33,24,27:32,34:42)]
+mat[,1:16]<-mat[,1:16]-rowMeans(mat[,1:16])
+mat<-mat[order(mat$log2FoldChange,decreasing = T),]
+pdf(paste0(file_name[8],"_heatmap.pdf"),height=18,width=6)
+pheatmap(as.matrix(mat[,1:16]), annotation_col = coldata[,1:2],cluster_rows = F,
+         fontsize_row =5, cluster_cols = F,labels_row = mat$Name, show_colnames = F)
+dev.off()
+
+#PBMC nonIBC vs Healthy
+tiff(tiff_name[9],units = "px",res = 300,height=500,width=800)
+par(mfrow=c(1,2),mar = c(1, 1, 0.1, 0.1))
+pro<-subset(comp_res[[9]],Type2=="Protein coding")
+non_sig<-subset(pro, padj>0.001 | abs(log2FoldChange)<2)
+sig<-subset(pro, padj<=0.001 & abs(log2FoldChange)>=2)
+plot_volcanoS(non_sig,sig,c(-5,5),c(0,6),seq(-5,5,5),seq(0,6,3),"pro")
+
+snc<-subset(comp_res[[9]],Type2!="Protein coding")
+snc$Type2<-droplevels(snc$Type2)
+non_sig<-subset(snc, padj>0.001 | abs(log2FoldChange)<2)
+heat_sig<-rbind(sig,subset(snc, padj<=0.001 & abs(log2FoldChange)>=2))
+sig<-subset(snc, padj<=0.001 & abs(log2FoldChange)>=2)
+plot_volcanoS(non_sig,sig,c(-5,5),c(0,25),seq(-5,5,5),seq(0,25,5),"snc")
+dev.off()
+#heatmap
+mat<-merge(comp_vst$PBMC,heat_sig,by=0)
+mat<-mat[,c(2:18,21,22,19,20,23,34:42)]
+mat[,1:22]<-mat[,1:22]-rowMeans(mat[,1:22])
+mat<-mat[order(mat$log2FoldChange,decreasing = T),]
+pdf(paste0(file_name[9],"_heatmap.pdf"),height=4,width=6)
+pheatmap(as.matrix(mat[,1:22]), annotation_col = coldata[,1:2],cluster_rows = F,
+         fontsize_row =5, cluster_cols = F,labels_row = mat$Name, show_colnames = F)
+dev.off()
+
+#Plasma IBC vs Healthy
+tiff(tiff_name[10],units = "px",res = 300,height=500,width=800)
+par(mfrow=c(1,2),mar = c(1, 1, 0.1, 0.1))
+pro<-subset(comp_res[[10]],Type2=="Protein coding")
+non_sig<-subset(pro, padj>0.001 | abs(log2FoldChange)<2)
+sig<-subset(pro, padj<=0.001 & abs(log2FoldChange)>=2)
+plot_volcanoS(non_sig,sig,c(-30,30),c(0,60),seq(-30,30,10),seq(0,60,15),"pro")
+
+snc<-subset(comp_res[[10]],Type2!="Protein coding")
+snc$Type2<-droplevels(snc$Type2)
+non_sig<-subset(snc, padj>0.001 | abs(log2FoldChange)<2)
+heat_sig<-rbind(sig,subset(snc, padj<=0.001 & abs(log2FoldChange)>=2))
+sig<-subset(snc, padj<=0.001 & abs(log2FoldChange)>=2)
+plot_volcanoS(non_sig,sig,c(-15,25),c(0,12),seq(-15,25,5),seq(0,12,3),"snc")
+dev.off()
+#heatmap
+mat<-merge(comp_vst$Plasma,heat_sig,by=0)
+mat<-mat[,c(2:17,25,26,33,24,27:32,34:42)]
+mat[,1:26]<-mat[,1:26]-rowMeans(mat[,1:26])
+mat<-mat[order(mat$log2FoldChange,decreasing = T),]
+pdf(paste0(file_name[10],"_heatmap.pdf"),height=18,width=6)
+pheatmap(as.matrix(mat[,1:26]), annotation_col = coldata[,1:2],cluster_rows = F,
+         fontsize_row =5, cluster_cols = F,labels_row = mat$Name, show_colnames = F)
+dev.off()
+
+#Plasma IBC vs nonIBC
+tiff(tiff_name[11],units = "px",res = 300,height=500,width=800)
+par(mfrow=c(1,2),mar = c(1, 1, 0.1, 0.1))
+pro<-subset(comp_res[[11]],Type2=="Protein coding")
+non_sig<-subset(pro, padj>0.001 | abs(log2FoldChange)<2)
+sig<-subset(pro, padj<=0.001 & abs(log2FoldChange)>=2)
+plot_volcanoS(non_sig,sig,c(-40,40),c(0,40),seq(-40,40,10),seq(0,40,10),"pro")
+
+snc<-subset(comp_res[[11]],Type2!="Protein coding")
+snc$Type2<-droplevels(snc$Type2)
+non_sig<-subset(snc, padj>0.001 | abs(log2FoldChange)<2)
+heat_sig<-rbind(sig,subset(snc, padj<=0.001 & abs(log2FoldChange)>=2))
+sig<-subset(snc, padj<=0.001 & abs(log2FoldChange)>=2)
+plot_volcanoS(non_sig,sig,c(-20,30),c(0,30),seq(-20,30,10),seq(0,30,10),"snc")
+dev.off()
+#heatmap
+mat<-merge(comp_vst$Plasma,heat_sig,by=0)
+mat<-mat[,c(18,21,22,19,20,23,25,26,33,24,27:32,34:42)]
+mat[,1:16]<-mat[,1:16]-rowMeans(mat[,1:16])
+mat<-mat[order(mat$log2FoldChange,decreasing = T),]
+pdf(paste0(file_name[11],"_heatmap.pdf"),height=18,width=6)
+pheatmap(as.matrix(mat[,1:16]), annotation_col = coldata[,1:2],cluster_rows = F,
+         fontsize_row =5, cluster_cols = F,labels_row = mat$Name, show_colnames = F)
+dev.off()
+
+#Plasma nonIBC vs Healthy
+tiff(tiff_name[12],units = "px",res = 300,height=500,width=800)
+par(mfrow=c(1,2),mar = c(1, 1, 0.1, 0.1))
+pro<-subset(comp_res[[12]],Type2=="Protein coding")
+non_sig<-subset(pro, padj>0.001 | abs(log2FoldChange)<2)
+sig<-subset(pro, padj<=0.001 & abs(log2FoldChange)>=2)
+plot_volcanoS(non_sig,sig,c(-30,30),c(0,30),seq(-30,30,10),seq(0,30,10),"pro")
+
+snc<-subset(comp_res[[12]],Type2!="Protein coding")
+snc$Type2<-droplevels(snc$Type2)
+non_sig<-subset(snc, padj>0.001 | abs(log2FoldChange)<2)
+heat_sig<-rbind(sig,subset(snc, padj<=0.001 & abs(log2FoldChange)>=2))
+sig<-subset(snc, padj<=0.001 & abs(log2FoldChange)>=2)
+plot_volcanoS(non_sig,sig,c(-25,10),c(0,25),seq(-25,10,5),seq(0,25,5),"snc")
+dev.off()
+#heatmap
+mat<-merge(comp_vst$Plasma,heat_sig,by=0)
+mat<-mat[,c(2:18,21,22,19,20,23,34:42)]
+mat[,1:22]<-mat[,1:22]-rowMeans(mat[,1:22])
+mat<-mat[order(mat$log2FoldChange,decreasing = T),]
+pdf(paste0(file_name[12],"_heatmap.pdf"),height=6,width=6)
+pheatmap(as.matrix(mat[,1:22]), annotation_col = coldata[,1:2],cluster_rows = F,
+         fontsize_row =5, cluster_cols = F,labels_row = mat$Name, show_colnames = F)
+dev.off()
 
 
-res<-data.frame(results(PBMC_dds,contrast = c("Disease","BC","Healthy"),alpha = 0.05))
-res<-cbind(res,pro_dat[,c(1,89)])
-res<-res[complete.cases(res),]
-res$log10padj<-log10(1/res$padj)
-non_sig<-subset(res, padj>0.001 | abs(log2FoldChange)<2)
-sig<-subset(res, padj<=0.001 & abs(log2FoldChange)>=2)
-plot_volcano(non_sig,sig,c(-10,10),c(0,9),seq(-10,10,5),seq(0,9,3),
-             "mRNA (PBMC: nonIBC vs Healthy)","pro",-10,9)
-text(sig[c(-1,-5),c(2,9)],pos=2,offset=0.15,labels = sig[c(-1,-5),7],cex=0.7)
-text(sig[c(1,5),c(2,9)],pos=4,offset=0.15,labels = sig[c(1,5),7],cex=0.7)
+#FFPE nonIBC HR+/-
+tiff(tiff_name[13],units = "px",res = 300,height=500,width=800)
+par(mfrow=c(1,2),mar = c(1, 1, 0.1, 0.1))
+pro<-subset(comp_res[[13]],Type2=="Protein coding")
+non_sig<-subset(pro, padj>0.001 | abs(log2FoldChange)<2)
+sig<-subset(pro, padj<=0.001 & abs(log2FoldChange)>=2)
+plot_volcanoS(non_sig,sig,c(-30,30),c(0,9),seq(-30,30,10),seq(0,9,3),"pro")
 
-#PBMC, sncRNA
+snc<-subset(comp_res[[13]],Type2!="Protein coding")
+snc$Type2<-droplevels(snc$Type2)
+non_sig<-subset(snc, padj>0.001 | abs(log2FoldChange)<2)
+heat_sig<-rbind(sig,subset(snc, padj<=0.001 & abs(log2FoldChange)>=2))
+sig<-subset(snc, padj<=0.001 & abs(log2FoldChange)>=2)
+plot_volcanoS(non_sig,sig,c(-10,10),c(0,9),seq(-10,10,5),seq(0,9,3),"snc")
+dev.off()
+#heatmap
+mat<-merge(comp_vst$FFPE_HR,heat_sig,by=0)
+mat<-mat[,c(2,4,3,6,16:24)]
+mat[,1:4]<-mat[,1:4]-rowMeans(mat[,1:4])
+mat<-mat[order(mat$log2FoldChange,decreasing = T),]
+pdf(paste0(file_name[13],"_heatmap.pdf"),height=6,width=6)
+pheatmap(as.matrix(mat[,1:4]), annotation_col = coldata[,1:2],cluster_rows = F,
+         fontsize_row =5, cluster_cols = F,labels_row = mat$Name, show_colnames = F)
+dev.off()
 
-res<-data.frame(results(PBMC_snc_dds,contrast = c("Disease","IBC","Healthy"),alpha = 0.05))
-res<-cbind(res,snc_dat[,c(1,89)])
-res<-res[complete.cases(res),]
-res$log10padj<-log10(1/res$padj)
-non_sig<-subset(res, padj>0.001 | abs(log2FoldChange)<2)
-sig<-subset(res, padj<=0.001 & abs(log2FoldChange)>=2)
-plot_volcano(non_sig,sig,c(-10,10),c(0,60),seq(-10,10,5),seq(0,60,10),
-             "sncRNA (PBMC: IBC vs Healthy)","snc",-10,60)
-sig_list<-c(4,7,17,22,24,50,51,81)
-text(sig[sig_list,c(2,9)],pos=4,offset=0.15,labels = sig[sig_list,7],cex=0.7)
-sig_list<-c(41,53,60,64,71,73,79,82)
-text(sig[sig_list,c(2,9)],pos=2,offset=0.15,labels = sig[sig_list,7],cex=0.7)
-text(sig[1,c(2,9)],pos=1,offset=0.15,labels = sig[1,7],cex=0.7)
+#FFPE IBC HR+/-
+tiff(tiff_name[14],units = "px",res = 300,height=500,width=800)
+par(mfrow=c(1,2),mar = c(1, 1, 0.1, 0.1))
+pro<-subset(comp_res[[14]],Type2=="Protein coding")
+non_sig<-subset(pro, padj>0.001 | abs(log2FoldChange)<2)
+sig<-subset(pro, padj<=0.001 & abs(log2FoldChange)>=2)
+plot_volcanoS(non_sig,sig,c(-30,30),c(0,9),seq(-30,30,10),seq(0,9,3),"pro")
 
-res<-data.frame(results(PBMC_snc_dds,contrast = c("Disease","IBC","BC"),alpha = 0.05))
-res<-cbind(res,snc_dat[,c(1,89)])
-res<-res[complete.cases(res),]
-res$log10padj<-log10(1/res$padj)
-non_sig<-subset(res, padj>0.001 | abs(log2FoldChange)<2)
-sig<-subset(res, padj<=0.001 & abs(log2FoldChange)>=2)
-plot_volcano(non_sig,sig,c(-15,15),c(0,60),seq(-15,15,5),seq(0,60,10),
-             "sncRNA (PBMC: IBC vs nonIBC)","snc",-15,60)
-sig_list<-c(8,9,17,23,39,53,70,82,86,146)
-text(sig[sig_list,c(2,9)],pos=4,offset=0.15,labels = sig[sig_list,7],cex=0.7)
-sig_list<-c(40,44,57,66,67,122,131,135,136)
-text(sig[sig_list,c(2,9)],pos=2,offset=0.15,labels = sig[sig_list,7],cex=0.7)
+snc<-subset(comp_res[[14]],Type2!="Protein coding")
+snc$Type2<-droplevels(snc$Type2)
+non_sig<-subset(snc, padj>0.001 | abs(log2FoldChange)<2)
+heat_sig<-rbind(sig,subset(snc, padj<=0.001 & abs(log2FoldChange)>=2))
+sig<-subset(snc, padj<=0.001 & abs(log2FoldChange)>=2)
+plot_volcanoS(non_sig,sig,c(-10,10),c(0,9),seq(-10,10,5),seq(0,9,3),"snc")
+dev.off()
+#heatmap
+mat<-merge(comp_vst$FFPE_HR,heat_sig,by=0)
+mat<-mat[,c(7,8,15,6,9:14,16:24)]
+mat[,1:10]<-mat[,1:10]-rowMeans(mat[,1:10])
+mat<-mat[order(mat$log2FoldChange,decreasing = T),]
+pdf(paste0(file_name[14],"_heatmap.pdf"),height=2,width=6)
+pheatmap(as.matrix(mat[,1:10]), annotation_col = coldata[,1:2],cluster_rows = F,
+         fontsize_row =5, cluster_cols = F,labels_row = mat$Name, show_colnames = F)
+dev.off()
 
-res<-data.frame(results(PBMC_snc_dds,contrast = c("Disease","BC","Healthy"),alpha = 0.05))
-res<-cbind(res,snc_dat[,c(1,89)])
-res<-res[complete.cases(res),]
-res$log10padj<-log10(1/res$padj)
-non_sig<-subset(res, padj>0.001 | abs(log2FoldChange)<2)
-sig<-subset(res, padj<=0.001 & abs(log2FoldChange)>=2)
-plot_volcano(non_sig,sig,c(-15,15),c(0,30),seq(-15,15,5),seq(0,30,10),
-             "sncRNA (PBMC: nonIBC vs Healthy)","snc",-15,30)
-sig_list<-c(12,14)
-text(sig[sig_list,c(2,9)],pos=4,offset=0.15,labels = sig[sig_list,7],cex=0.7)
-sig_list<-c(1,7,9,17,18)
-text(sig[sig_list,c(2,9)],pos=2,offset=0.15,labels = sig[sig_list,7],cex=0.7)
-text(sig[4,c(2,9)],pos=3,offset=0.15,labels = sig[4,7],cex=0.7)
+#PBMC nonIBC HR+/-
+tiff(tiff_name[15],units = "px",res = 300,height=500,width=800)
+par(mfrow=c(1,2),mar = c(1, 1, 0.1, 0.1))
+pro<-subset(comp_res[[15]],Type2=="Protein coding")
+non_sig<-subset(pro, padj>0.001 | abs(log2FoldChange)<2)
+sig<-subset(pro, padj<=0.001 & abs(log2FoldChange)>=2)
+plot_volcanoS(non_sig,sig,c(-25,10),c(0,9),seq(-25,10,5),seq(0,9,3),"pro")
 
-#Plasma mRNA
-res<-data.frame(results(Plasma_dds,contrast = c("Disease","IBC","Healthy"),alpha = 0.05))
-res<-cbind(res,pro_dat[,c(1,89)])
-res<-res[complete.cases(res),]
-res$log10padj<-log10(1/res$padj)
-non_sig<-subset(res, padj>0.001 | abs(log2FoldChange)<2)
-sig<-subset(res, padj<=0.001 & abs(log2FoldChange)>=2)
-plot_volcano(non_sig,sig,c(-30,30),c(0,50),seq(-30,30,10),seq(0,50,10),
-             "mRNA (Plasma: IBC vs Healthy)","pro",5,50)
-sig_list<-c(118,212)
-text(sig[sig_list,c(2,9)],pos=2,offset=0.15,labels = sig[sig_list,7],cex=0.7)
-sig_list<-c(115,139,189)
-text(sig[sig_list,c(2,9)],pos=4,offset=0.15,labels = sig[sig_list,7],cex=0.7)
-text(sig[49,c(2,9)],pos=3,offset=0.15,labels = sig[49,7],cex=0.7)
+snc<-subset(comp_res[[15]],Type2!="Protein coding")
+snc$Type2<-droplevels(snc$Type2)
+non_sig<-subset(snc, padj>0.001 | abs(log2FoldChange)<2)
+heat_sig<-rbind(sig,subset(snc, padj<=0.001 & abs(log2FoldChange)>=2))
+sig<-subset(snc, padj<=0.001 & abs(log2FoldChange)>=2)
+plot_volcanoS(non_sig,sig,c(-10,10),c(0,9),seq(-10,10,5),seq(0,9,3),"snc")
+dev.off()
+#heatmap
+mat<-merge(comp_vst$PBMC_HR,heat_sig,by=0)
+mat<-mat[,c(2,5,6,3,4,7,18:26)]
+mat[,1:6]<-mat[,1:6]-rowMeans(mat[,1:6])
+mat<-mat[order(mat$log2FoldChange,decreasing = T),]
+pdf(paste0(file_name[15],"_heatmap.pdf"),height=2,width=6)
+pheatmap(as.matrix(mat[,1:6]), annotation_col = coldata[,1:2],cluster_rows = F,
+         fontsize_row =5, cluster_cols = F,labels_row = mat$Name, show_colnames = F)
+dev.off()
 
-res<-data.frame(results(Plasma_dds,contrast = c("Disease","IBC","BC"),alpha = 0.05))
-res<-cbind(res,pro_dat[,c(1,89)])
-res<-res[complete.cases(res),]
-res$log10padj<-log10(1/res$padj)
-non_sig<-subset(res, padj>0.001 | abs(log2FoldChange)<2)
-sig<-subset(res, padj<=0.001 & abs(log2FoldChange)>=2)
-plot_volcano(non_sig,sig,c(-30,30),c(0,40),seq(-30,30,10),seq(0,40,10),
-             "mRNA (Plasma: IBC vs nonIBC)","pro",-30,40)
-sig_list<-c(31, 50,  76,  128, 152, 154)
-text(sig[sig_list,c(2,9)],pos=3,offset=0.15,labels = sig[sig_list,7],cex=0.7)
-sig_list<-c(46,126,205)
-text(sig[sig_list,c(2,9)],pos=4,offset=0.15,labels = sig[sig_list,7],cex=0.7)
-text(sig[159,c(2,9)],pos=1,offset=0.15,labels = sig[159,7],cex=0.7)
+#PBMC IBC HR+/-
+tiff(tiff_name[16],units = "px",res = 300,height=500,width=800)
+par(mfrow=c(1,2),mar = c(1, 1, 0.1, 0.1))
+pro<-subset(comp_res[[16]],Type2=="Protein coding")
+non_sig<-subset(pro, padj>0.001 | abs(log2FoldChange)<2)
+sig<-subset(pro, padj<=0.001 & abs(log2FoldChange)>=2)
+plot_volcanoS(non_sig,sig,c(-10,10),c(0,9),seq(-10,10,5),seq(0,9,3),"pro")
 
-res<-data.frame(results(Plasma_dds,contrast = c("Disease","BC","Healthy"),alpha = 0.05))
-res<-cbind(res,pro_dat[,c(1,89)])
-res<-res[complete.cases(res),]
-res$log10padj<-log10(1/res$padj)
-non_sig<-subset(res, padj>0.001 | abs(log2FoldChange)<2)
-sig<-subset(res, padj<=0.001 & abs(log2FoldChange)>=2)
-plot_volcano(non_sig,sig,c(-30,30),c(0,30),seq(-30,30,10),seq(0,30,10),
-             "mRNA (Plasma: nonIBC vs Healthy)","pro",-30,30)
-sig_list<-c(16, 40, 46, 49, 64, 67)
-text(sig[sig_list,c(2,9)],pos=3,offset=0.15,labels = sig[sig_list,7],cex=0.7)
-sig_list<-c(3,47)
-text(sig[sig_list,c(2,9)],pos=1,offset=0.15,labels = sig[sig_list,7],cex=0.7)
+snc<-subset(comp_res[[16]],Type2!="Protein coding")
+snc$Type2<-droplevels(snc$Type2)
+non_sig<-subset(snc, padj>0.001 | abs(log2FoldChange)<2)
+heat_sig<-rbind(sig,subset(snc, padj<=0.001 & abs(log2FoldChange)>=2))
+sig<-subset(snc, padj<=0.001 & abs(log2FoldChange)>=2)
+plot_volcanoS(non_sig,sig,c(-10,10),c(0,9),seq(-10,10,5),seq(0,9,3),"snc")
+dev.off()
+# no sig
+#Plasma nonIBC HR+/-
+tiff(tiff_name[17],units = "px",res = 300,height=500,width=800)
+par(mfrow=c(1,2),mar = c(1, 1, 0.1, 0.1))
+pro<-subset(comp_res[[17]],Type2=="Protein coding")
+non_sig<-subset(pro, padj>0.001 | abs(log2FoldChange)<2)
+sig<-subset(pro, padj<=0.001 & abs(log2FoldChange)>=2)
+plot_volcanoS(non_sig,sig,c(-25,25),c(0,9),seq(-25,25,5),seq(0,9,3),"pro")
 
-#Plasma sncRNA
-res<-data.frame(results(Plasma_snc_dds,contrast = c("Disease","IBC","Healthy"),alpha = 0.05))
-res<-cbind(res,snc_dat[,c(1,89)])
-res<-res[complete.cases(res),]
-res$log10padj<-log10(1/res$padj)
-non_sig<-subset(res, padj>0.001 | abs(log2FoldChange)<2)
-sig<-subset(res, padj<=0.001 & abs(log2FoldChange)>=2)
-plot_volcano(non_sig,sig,c(-20,40),c(0,30),seq(-20,40,10),seq(0,30,10),
-             "sncRNA (Plasma: IBC vs Healthy)","snc",-20,30)
-sig_list<-c(2,3,4,13)
-text(sig[sig_list,c(2,9)],pos=4,offset=0.15,labels = sig[sig_list,7],cex=0.7)
-sig_list<-c(8,11,15)
-text(sig[sig_list,c(2,9)],pos=3,offset=0.15,labels = sig[sig_list,7],cex=0.7)
+snc<-subset(comp_res[[17]],Type2!="Protein coding")
+snc$Type2<-droplevels(snc$Type2)
+non_sig<-subset(snc, padj>0.001 | abs(log2FoldChange)<2)
+heat_sig<-rbind(sig,subset(snc, padj<=0.001 & abs(log2FoldChange)>=2))
+sig<-subset(snc, padj<=0.001 & abs(log2FoldChange)>=2)
+plot_volcanoS(non_sig,sig,c(-15,25),c(0,9),seq(-15,25,5),seq(0,9,3),"snc")
+dev.off()
+#heatmap
+mat<-merge(comp_vst$Plasma_HR,heat_sig,by=0)
+mat<-mat[,c(2,5,6,3,4,7,18:26)]
+mat[,1:6]<-mat[,1:6]-rowMeans(mat[,1:6])
+mat<-mat[order(mat$log2FoldChange,decreasing = T),]
+pdf(paste0(file_name[17],"_heatmap.pdf"),height=18,width=6)
+pheatmap(as.matrix(mat[,1:6]), annotation_col = coldata[,1:2],cluster_rows = F,
+         fontsize_row =5, cluster_cols = F,labels_row = mat$Name, show_colnames = F)
+dev.off()
 
-res<-data.frame(results(Plasma_snc_dds,contrast = c("Disease","IBC","BC"),alpha = 0.05))
-res<-cbind(res,snc_dat[,c(1,89)])
-res<-res[complete.cases(res),]
-res$log10padj<-log10(1/res$padj)
-non_sig<-subset(res, padj>0.001 | abs(log2FoldChange)<2)
-sig<-subset(res, padj<=0.001 & abs(log2FoldChange)>=2)
-plot_volcano(non_sig,sig,c(-30,30),c(0,9),seq(-30,30,10),seq(0,9,3),
-             "sncRNA (Plasma: IBC vs nonIBC)","snc",3,9)
-sig_list<-c(9,11,12)
-text(sig[sig_list,c(2,9)],pos=3,offset=0.15,labels = sig[sig_list,7],cex=0.7)
-sig_list<-c(4:6,14)
-text(sig[sig_list,c(2,9)],pos=1,offset=0.15,labels = sig[sig_list,7],cex=0.7)
+#Plasma IBC HR+/-
+tiff(tiff_name[18],units = "px",res = 300,height=500,width=800)
+par(mfrow=c(1,2),mar = c(1, 1, 0.1, 0.1))
+pro<-subset(comp_res[[18]],Type2=="Protein coding")
+non_sig<-subset(pro, padj>0.001 | abs(log2FoldChange)<2)
+sig<-subset(pro, padj<=0.001 & abs(log2FoldChange)>=2)
+plot_volcanoS(non_sig,sig,c(-30,40),c(0,20),seq(-30,40,10),seq(0,20,10),"pro")
 
-res<-data.frame(results(Plasma_snc_dds,contrast = c("Disease","BC","Healthy"),alpha = 0.05))
-res<-cbind(res,snc_dat[,c(1,89)])
-res<-res[complete.cases(res),]
-res$log10padj<-log10(1/res$padj)
-non_sig<-subset(res, padj>0.001 | abs(log2FoldChange)<2)
-sig<-subset(res, padj<=0.001 & abs(log2FoldChange)>=2)
-plot_volcano(non_sig,sig,c(-30,30),c(0,9),seq(-30,30,10),seq(0,9,3),
-             "sncRNA (Plasma: nonIBC vs Healthy)","snc",-30,9)
-text(sig[c(-1,-5,-8),c(2,9)],pos=3,offset=0.15,labels = sig[c(-1,-5,-8),7],cex=0.7)
-text(sig[1,c(2,9)],pos=2,offset=0.15,labels = sig[1,7],cex=0.7)
-text(sig[5,c(2,9)],pos=4,offset=0.15,labels = sig[5,7],cex=0.7)
-text(sig[8,c(2,9)],pos=1,offset=0.15,labels = sig[8,7],cex=0.7)
+snc<-subset(comp_res[[18]],Type2!="Protein coding")
+snc$Type2<-droplevels(snc$Type2)
+non_sig<-subset(snc, padj>0.001 | abs(log2FoldChange)<2)
+heat_sig<-rbind(sig,subset(snc, padj<=0.001 & abs(log2FoldChange)>=2))
+sig<-subset(snc, padj<=0.001 & abs(log2FoldChange)>=2)
+plot_volcanoS(non_sig,sig,c(-20,30),c(0,12),seq(-20,30,10),seq(0,12,3),"snc")
+dev.off()
+#heatmap
+mat<-merge(comp_vst$Plasma_HR,heat_sig,by=0)
+mat<-mat[,c(9,10,17,8,11:16,18:26)]
+mat[,1:10]<-mat[,1:10]-rowMeans(mat[,1:10])
+mat<-mat[order(mat$log2FoldChange,decreasing = T),]
+pdf(paste0(file_name[18],"_heatmap.pdf"),height=18,width=6)
+pheatmap(as.matrix(mat[,1:10]), annotation_col = coldata[,1:2],cluster_rows = F,
+         fontsize_row =5, cluster_cols = F,labels_row = mat$Name, show_colnames = F)
 dev.off()
 ```
-## HR- and HR+ comparason
-```{r, echo=FALSE}
-pdf("IBC_HR_volcano.pdf",height=6,width=8,onefile = T)
-#postscript("IBC_volcano.eps",onefile = T, paper="US)
-par(mfrow=c(1,2))
-# mRNA
-# FFPE nonIBC
-res<-data.frame(results(FFPE_BC_HR,contrast = c("HR","BCP","BCN"),alpha = 0.05))
-res<-cbind(res,pro_dat[,c(1,89)])
-res<-res[complete.cases(res),]
-res$log10padj<-log10(1/res$padj)
-non_sig<-subset(res, padj>0.001 | abs(log2FoldChange)<2)
-sig<-subset(res, padj<=0.001 & abs(log2FoldChange)>=2)
-plot_volcano(non_sig,sig,c(-25,25),c(0,40),seq(-25,25,5),seq(0,40,10),
-             "mRNA (FFPE nonIBC: HR+ vs HR-)","pro",-25,40)
-sig_list<-c(17 ,129, 136, 248, 263, 356,162, 281, 326)
-text(sig[sig_list,c(2,9)],pos=3,offset=0.15,labels = sig[sig_list,7],cex=0.7)
-text(sig[311,c(2,9)],pos=1,offset=0.15,labels = sig[311,7],cex=0.7)
-text(sig[315,c(2,9)],pos=4,offset=0.15,labels = sig[315,7],cex=0.7)
-text(sig[323,c(2,9)],pos=4,offset=0.15,labels = sig[323,7],cex=0.7)
-# FFPE IBC
-res<-data.frame(results(FFPE_IBC_HR,contrast = c("HR","IBCP","IBCN"),alpha = 0.05))
-res<-cbind(res,pro_dat[,c(1,89)])
-res<-res[complete.cases(res),]
-res$log10padj<-log10(1/res$padj)
-non_sig<-subset(res, padj>0.001 | abs(log2FoldChange)<2)
-sig<-subset(res, padj<=0.001 & abs(log2FoldChange)>=2)
-plot_volcano(non_sig,sig,c(-10,25),c(0,12),seq(-10,25,5),seq(0,12,3),
-             "mRNA (FFPE IBC: HR+ vs HR-)","pro",-10,12)
-text(sig[,c(2,9)],pos=3,offset=0.15,labels = sig[,7],cex=0.7)
 
-# PBMC nonIBC
-res<-data.frame(results(PBMC_BC_HR,contrast = c("HR","BCP","BCN"),alpha = 0.05))
-res<-cbind(res,pro_dat[,c(1,89)])
-res<-res[complete.cases(res),]
-res$log10padj<-log10(1/res$padj)
-non_sig<-subset(res, padj>0.001 | abs(log2FoldChange)<2)
-sig<-subset(res, padj<=0.001 & abs(log2FoldChange)>=2)
-plot_volcano(non_sig,sig,c(-10,10),c(0,6),seq(-10,10,5),seq(0,6,3),
-             "mRNA (PBMC nonIBC: HR+ vs HR-)","pro",-10,6)
-# PBMC IBC
-res<-data.frame(results(PBMC_IBC_HR,contrast = c("HR","IBCP","IBCN"),alpha = 0.05))
-res<-cbind(res,pro_dat[,c(1,89)])
-res<-res[complete.cases(res),]
-res$log10padj<-log10(1/res$padj)
-non_sig<-subset(res, padj>0.001 | abs(log2FoldChange)<2)
-sig<-subset(res, padj<=0.001 & abs(log2FoldChange)>=2)
-plot_volcano(non_sig,sig,c(-10,10),c(0,6),seq(-10,10,5),seq(0,6,3),
-             "mRNA (PBMC IBC: HR+ vs HR-)","pro",-10,6)
-
-#Plasma nonIBC
-res<-data.frame(results(Plasma_BC_HR,contrast = c("HR","BCP","BCN"),alpha = 0.05))
-res<-cbind(res,pro_dat[,c(1,89)])
-res<-res[complete.cases(res),]
-res$log10padj<-log10(1/res$padj)
-non_sig<-subset(res, padj>0.001 | abs(log2FoldChange)<2)
-sig<-subset(res, padj<=0.001 & abs(log2FoldChange)>=2)
-plot_volcano(non_sig,sig,c(-10,25),c(0,9),seq(-10,25,5),seq(0,9,3),
-             "mRNA (Plasma nonIBC: HR+ vs HR-)","pro",-10,9)
-sig_list<-c(30,33,48,147)
-text(sig[sig_list,c(2,9)],pos=3,offset=0.15,labels = sig[sig_list,7],cex=0.7)
-sig_list<-c(1,27,60)
-text(sig[sig_list,c(2,9)],pos=1,offset=0.15,labels = sig[sig_list,7],cex=0.7)
-
-# Plasma IBC
-res<-data.frame(results(Plasma_IBC_HR,contrast = c("HR","IBCP","IBCN"),alpha = 0.05))
-res<-cbind(res,pro_dat[,c(1,89)])
-res<-res[complete.cases(res),]
-res$log10padj<-log10(1/res$padj)
-non_sig<-subset(res, padj>0.001 | abs(log2FoldChange)<2)
-sig<-subset(res, padj<=0.001 & abs(log2FoldChange)>=2)
-plot_volcano(non_sig,sig,c(-15,30),c(0,20),seq(-15,30,5),seq(0,20,5),
-             "mRNA (PBMC IBC: HR+ vs HR-)","pro",-15,20)
-sig_list<-c(2, 18, 21 ,30, 31, 44 ,58)
-text(sig[sig_list,c(2,9)],pos=3,offset=0.15,labels = sig[sig_list,7],cex=0.7)
-sig_list<-c(8 ,15, 32, 39, 56)
-text(sig[sig_list,c(2,9)],pos=1,offset=0.15,labels = sig[sig_list,7],cex=0.7)
-
-# sncRNAs
-# FFPE nonIBC
-res<-data.frame(results(FFPE_BC_snc_HR,contrast = c("HR","BCP","BCN"),alpha = 0.05))
-res<-cbind(res,snc_dat[,c(1,89)])
-res<-res[complete.cases(res),]
-res$log10padj<-log10(1/res$padj)
-non_sig<-subset(res, padj>0.001 | abs(log2FoldChange)<2)
-sig<-subset(res, padj<=0.001 & abs(log2FoldChange)>=2)
-plot_volcano(non_sig,sig,c(-10,10),c(0,9),seq(-10,10,5),seq(0,9,3),
-             "sncRNA (FFPE nonIBC: HR+ vs HR-)","snc",-10,9)
-text(sig[,c(2,9)],pos=3,offset=0.15,labels = sig[,7],cex=0.7)
-# FFPE IBC
-res<-data.frame(results(FFPE_IBC_snc_HR,contrast = c("HR","IBCP","IBCN"),alpha = 0.05))
-res<-cbind(res,snc_dat[,c(1,89)])
-res<-res[complete.cases(res),]
-res$log10padj<-log10(1/res$padj)
-non_sig<-subset(res, padj>0.001 | abs(log2FoldChange)<2)
-sig<-subset(res, padj<=0.001 & abs(log2FoldChange)>=2)
-plot_volcano(non_sig,sig,c(-10,10),c(0,6),seq(-10,10,5),seq(0,6,3),
-             "sncRNA (FFPE IBC: HR+ vs HR-)","snc",-10,6)
-
-# PBMC nonIBC
-res<-data.frame(results(PBMC_BC_snc_HR,contrast = c("HR","BCP","BCN"),alpha = 0.05))
-res<-cbind(res,snc_dat[,c(1,89)])
-res<-res[complete.cases(res),]
-res$log10padj<-log10(1/res$padj)
-non_sig<-subset(res, padj>0.001 | abs(log2FoldChange)<2)
-sig<-subset(res, padj<=0.001 & abs(log2FoldChange)>=2)
-plot_volcano(non_sig,sig,c(-10,10),c(0,6),seq(-10,10,5),seq(0,6,3),
-             "sncRNA (PBMC nonIBC: HR+ vs HR-)","snc",-10,6)
-# PBMC IBC
-res<-data.frame(results(PBMC_IBC_snc_HR,contrast = c("HR","IBCP","IBCN"),alpha = 0.05))
-res<-cbind(res,snc_dat[,c(1,89)])
-res<-res[complete.cases(res),]
-res$log10padj<-log10(1/res$padj)
-non_sig<-subset(res, padj>0.001 | abs(log2FoldChange)<2)
-sig<-subset(res, padj<=0.001 & abs(log2FoldChange)>=2)
-plot_volcano(non_sig,sig,c(-10,10),c(0,6),seq(-10,10,5),seq(0,6,3),
-             "sncRNA (PBMC IBC: HR+ vs HR-)","snc",-10,6)
-
-# Plasma nonIBC
-res<-data.frame(results(Plasma_BC_snc_HR,contrast = c("HR","BCP","BCN"),alpha = 0.05))
-res<-cbind(res,snc_dat[,c(1,89)])
-res<-res[complete.cases(res),]
-res$log10padj<-log10(1/res$padj)
-non_sig<-subset(res, padj>0.001 | abs(log2FoldChange)<2)
-sig<-subset(res, padj<=0.001 & abs(log2FoldChange)>=2)
-plot_volcano(non_sig,sig,c(-10,10),c(0,6),seq(-10,10,5),seq(0,6,3),
-             "sncRNA (Plasma nonIBC: HR+ vs HR-)","snc",-10,6)
-# Plasma IBC
-res<-data.frame(results(Plasma_IBC_snc_HR,contrast = c("HR","IBCP","IBCN"),alpha = 0.05))
-res<-cbind(res,snc_dat[,c(1,89)])
-res<-res[complete.cases(res),]
-res$log10padj<-log10(1/res$padj)
-non_sig<-subset(res, padj>0.001 | abs(log2FoldChange)<2)
-sig<-subset(res, padj<=0.001 & abs(log2FoldChange)>=2)
-plot_volcano(non_sig,sig,c(-10,25),c(0,15),seq(-10,25,5),seq(0,15,3),
-             "sncRNA (Plasma IBC: HR+ vs HR-)","snc",-10,15)
-text(sig[c(3,6,7),c(2,9)],pos=2,offset=0.15,labels = sig[c(3,6,7),7],cex=0.7)
-text(sig[c(1,2,4),c(2,9)],pos=4,offset=0.15,labels = sig[c(1,2,4),7],cex=0.7)
-text(sig[5,c(2,9)],pos=1,offset=0.15,labels = sig[5,7],cex=0.7)
-dev.off()
-```

@@ -21,8 +21,6 @@ mcol<-c("black","red")
 scol<-brewer.pal(9, "Set1")
 pcol<-brewer.pal(4,"Paired")
 
-
-
 tiff("IBC_volcano_1.tiff",units = "px",res = 300,height=500,width=800)
 par(mfrow=c(1,2),mar = c(1, 1, 0.1, 0.1))
 #frozen  nonBC vs Healthy
@@ -387,3 +385,37 @@ non_sig<-subset(res, padj>0.001 | abs(log2FoldChange)<2)
 sig<-subset(res, padj<=0.001 & abs(log2FoldChange)>=2)
 plot_volcanoS(non_sig,sig,c(-20,30),c(0,20),seq(-20,30,10),seq(0,20,10),"snc")
 dev.off()
+
+
+#pheatmap
+
+res<-data.frame(results(FFPE_dds,contrast = c("Disease","IBC","nonIBC"),alpha = 0.05))
+res<-cbind(res,pro_dat[,c(1,89)])
+res<-res[complete.cases(res),]
+res$log10padj<-log10(1/res$padj)
+non_sig<-subset(res, padj>0.001 | abs(log2FoldChange)<2)
+sig<-subset(res, padj<=0.001 & abs(log2FoldChange)>=2)
+
+res<-data.frame(results(FFPE_snc_dds,contrast = c("Disease","IBC","nonIBC"),alpha = 0.05))
+res<-cbind(res,snc_dat[,c(1,89)])
+res<-res[complete.cases(res),]
+res$log10padj<-log10(1/res$padj)
+sig<-rbind(sig,subset(res, padj<=0.001 & abs(log2FoldChange)>=2))
+
+mat<-rbind(assay(FFPE_vst),assay(FFPE_snc_vst))
+mat<-merge(mat,sig,by=0)
+row.names(mat)<-mat$Row.names
+mat[,2:23]<-mat[,2:23]-rowMeans(mat[,2:23])
+anno<-data.frame(row.names=colnames(mat)[10:23],
+                 "Disease"=c(rep("nonIBC",4),rep("IBC",10)),
+                 "HR"=c("N","P","N","P","P","N","N",rep("P",6),"N"))
+heat1<-pheatmap(as.matrix(mat[,c(10,12,11,13,15,16,23,14,17:22)]), annotation_col = anno,cluster_rows = F,
+         cluster_cols = F,labels_row = mat$Name, show_colnames = F)
+
+
+
+figure <- multi_panel_figure(width = 90, height = 60, columns = 3,rows=1) %>%
+  fill_panel("FFPE_IBC_nonIBC.tiff",column=1:2) %>%
+  fill_panel(heat1,column=3)
+
+
