@@ -6,7 +6,7 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = F)
 ```
 
 ## R Markdown
@@ -17,6 +17,7 @@ When you click the **Knit** button a document will be generated that includes bo
 
 ```{r,echo = FALSE}
 rm(list=ls())
+gc()
 library (DESeq2)
 library(genefilter)
 library(gplots)
@@ -25,7 +26,7 @@ library(shape)
 library(ggfortify)
 library(pheatmap)
 library("BiocParallel")
-library("ComplexHeatmap")
+#library("ComplexHeatmap")
 library(circlize)
 library(scales)
 library(ggpubr)
@@ -41,17 +42,22 @@ load("IBC.image")
 ## This section is stored in "IBC.image"
 ```{r, echo=FALSE}
 dat<-read.delim("all_IBC_cleanedup.counts")
+dat<-dat[c(1:33,35:65,67:89)]
+colnames(dat)[34:38]<-paste0("PBMC_H1",1:5)
+colnames(dat)[65:69]<-paste0("Plasma_H1",1:5)
+dat$Type<-as.factor(dat$Type)
+dat$Type2<-as.factor(dat$Type2)
 coldata <- data.frame(c(rep("Healthy",4),rep("F_nonIBC",4),rep("nonIBC",4),rep("IBC",10),
-                        rep(c(rep("Healthy",16),rep("nonIBC",6),rep("IBC",10)),2)),
+                        rep(c(rep("Healthy",15),rep("nonIBC",6),rep("IBC",10)),2)),
                       c(rep("H",4),rep("NA",4),
                         rep(c("N","P"),2),
                         c("P","N","N",rep("P",6),"N"),
-                        rep(c(rep("H",16),
+                        rep(c(rep("H",15),
                         c("N","P","P","N","N","P"),
                         c("P","N","N",rep("P",6),"N")),2)),
-                      c(rep("Forzen Tissue",8),rep("FFPE",14),rep("PBMC",32),rep("Plasma",32)),
-                      colnames(dat)[2:87],
-                      row.names=colnames(dat)[2:87])
+                      c(rep("Forzen Tissue",8),rep("FFPE",14),rep("PBMC",31),rep("Plasma",31)),
+                      colnames(dat)[2:85],
+                      row.names=colnames(dat)[2:85])
 colnames(coldata) <- c("Disease","HR","Tissue","Name")
 coldata$Disease<-factor(coldata$Disease,levels=c("Healthy","F_nonIBC","nonIBC","IBC"))
 coldata$HR<-factor(coldata$HR,levels=c("H","NA","N","P"))
@@ -59,63 +65,81 @@ coldata$HR<-factor(coldata$HR,levels=c("H","NA","N","P"))
 pro_dat<-dat[dat$Type=="Protein coding",]
 FFPE_dds <- DESeqDataSetFromMatrix(countData = pro_dat[,2:23],
                                    colData = coldata[1:22,],design = ~Disease)
-PBMC_dds <- DESeqDataSetFromMatrix(countData = pro_dat[,24:55],
-                                   colData = coldata[23:54,],design = ~Disease)
-Plasma_dds <- DESeqDataSetFromMatrix(countData = pro_dat[,56:87],
-                                     colData = coldata[55:86,],design = ~Disease)
+PBMC_dds <- DESeqDataSetFromMatrix(countData = pro_dat[,24:54],
+                                   colData = coldata[23:53,],design = ~Disease)
+Plasma_dds <- DESeqDataSetFromMatrix(countData = pro_dat[,55:85],
+                                     colData = coldata[54:84,],design = ~Disease)
 FFPE_dds <- DESeq(FFPE_dds,parallel = T)
-FFPE_vst<-varianceStabilizingTransformation(FFPE_dds)
 PBMC_dds <- DESeq(PBMC_dds,parallel = T)
-PBMC_vst<-varianceStabilizingTransformation(PBMC_dds)
 Plasma_dds <- DESeq(Plasma_dds,parallel = T)
-Plasma_vst<-varianceStabilizingTransformation(Plasma_dds)
-# creat deseq objects for HR analysis using the same size factors, the vst counts will also be different by different disign.
+# creat deseq objects for HR analysis using the same size factors, 
 FFPE_HR <- DESeqDataSetFromMatrix(countData = pro_dat[,10:23],
                                    colData = coldata[9:22,],design = ~Disease+HR+Disease:HR)
-PBMC_HR <- DESeqDataSetFromMatrix(countData = pro_dat[,40:55],
-                                   colData = coldata[39:54,],design = ~Disease+HR+Disease:HR)
-Plasma_HR <- DESeqDataSetFromMatrix(countData = pro_dat[,72:87],
-                                   colData = coldata[71:86,],design = ~Disease+HR+Disease:HR)
+PBMC_HR <- DESeqDataSetFromMatrix(countData = pro_dat[,39:54],
+                                   colData = coldata[38:53,],design = ~Disease+HR+Disease:HR)
+Plasma_HR <- DESeqDataSetFromMatrix(countData = pro_dat[,70:85],
+                                   colData = coldata[69:84,],design = ~Disease+HR+Disease:HR)
 sizeFactors(FFPE_HR) <- sizeFactors(FFPE_dds)[9:22]
-sizeFactors(PBMC_HR) <- sizeFactors(PBMC_dds)[17:32]
-sizeFactors(Plasma_HR) <- sizeFactors(Plasma_dds)[17:32]
+sizeFactors(PBMC_HR) <- sizeFactors(PBMC_dds)[16:31]
+sizeFactors(Plasma_HR) <- sizeFactors(Plasma_dds)[16:31]
 FFPE_HR <- DESeq(FFPE_HR,parallel = T)
-FFPE_HR_vst <- varianceStabilizingTransformation(FFPE_HR)
 PBMC_HR <- DESeq(PBMC_HR,parallel = T)
-PBMC_HR_vst <- varianceStabilizingTransformation(PBMC_HR)
 Plasma_HR <- DESeq(Plasma_HR,parallel = T)
-Plasma_HR_vst <- varianceStabilizingTransformation(Plasma_HR)
 #sncRNA DE
 snc_dat<-dat[dat$Type=="sncRNA"|dat$Type=="miRNA",]
 snc_dat$Type2<-droplevels(snc_dat$Type2)
 FFPE_snc_dds <- DESeqDataSetFromMatrix(countData = snc_dat[,2:23], 
                                        colData = coldata[1:22,],design = ~Disease)
-PBMC_snc_dds <- DESeqDataSetFromMatrix(countData = snc_dat[,24:55], 
-                                       colData = coldata[23:54,],design = ~Disease)
-Plasma_snc_dds <- DESeqDataSetFromMatrix(countData = snc_dat[,56:87], 
-                                         colData = coldata[55:86,],design = ~Disease)
+PBMC_snc_dds <- DESeqDataSetFromMatrix(countData = snc_dat[,24:54], 
+                                       colData = coldata[23:53,],design = ~Disease)
+Plasma_snc_dds <- DESeqDataSetFromMatrix(countData = snc_dat[,55:85], 
+                                         colData = coldata[54:84,],design = ~Disease)
 FFPE_snc_dds <- DESeq(FFPE_snc_dds,parallel = T)
-FFPE_snc_vst<-varianceStabilizingTransformation(FFPE_snc_dds)
 PBMC_snc_dds <- DESeq(PBMC_snc_dds,parallel = T)
-PBMC_snc_vst<-varianceStabilizingTransformation(PBMC_snc_dds)
 Plasma_snc_dds <- DESeq(Plasma_snc_dds,parallel = T)
-Plasma_snc_vst<-varianceStabilizingTransformation(Plasma_snc_dds)
 
 FFPE_snc_HR <- DESeqDataSetFromMatrix(countData = snc_dat[,10:23],
                                      colData = coldata[9:22,],design = ~Disease+HR+Disease:HR)
-PBMC_snc_HR <- DESeqDataSetFromMatrix(countData = snc_dat[,40:55],
-                                     colData = coldata[39:54,],design = ~Disease+HR+Disease:HR)
-Plasma_snc_HR <- DESeqDataSetFromMatrix(countData = snc_dat[,72:87],
-                                       colData = coldata[71:86,],design = ~Disease+HR+Disease:HR)
+PBMC_snc_HR <- DESeqDataSetFromMatrix(countData = snc_dat[,39:54],
+                                     colData = coldata[38:53,],design = ~Disease+HR+Disease:HR)
+Plasma_snc_HR <- DESeqDataSetFromMatrix(countData = snc_dat[,70:85],
+                                       colData = coldata[69:84,],design = ~Disease+HR+Disease:HR)
 sizeFactors(FFPE_snc_HR) <- sizeFactors(FFPE_snc_dds)[9:22]
-sizeFactors(PBMC_snc_HR) <- sizeFactors(PBMC_snc_dds)[17:32]
-sizeFactors(Plasma_snc_HR) <- sizeFactors(Plasma_snc_dds)[17:32]
+sizeFactors(PBMC_snc_HR) <- sizeFactors(PBMC_snc_dds)[16:31]
+sizeFactors(Plasma_snc_HR) <- sizeFactors(Plasma_snc_dds)[16:31]
 FFPE_snc_HR <- DESeq(FFPE_snc_HR,parallel = T)
-FFPE_snc_HR_vst <- varianceStabilizingTransformation(FFPE_snc_HR)
 PBMC_snc_HR <- DESeq(PBMC_snc_HR,parallel = T)
-PBMC_snc_HR_vst <- varianceStabilizingTransformation(PBMC_snc_HR)
 Plasma_snc_HR <- DESeq(Plasma_snc_HR,parallel = T)
-Plasma_snc_HR_vst <- varianceStabilizingTransformation(Plasma_snc_HR)
+
+#lncRNA DE
+lnc_dat<-dat[dat$Type=="Antisense"|dat$Type=="lincRNA"|dat$Type=="Other lncRNA"|dat$Type=="Pseudogene",]
+lnc_dat$Type<-droplevels(lnc_dat$Type)
+FFPE_lnc_dds <- DESeqDataSetFromMatrix(countData = lnc_dat[,2:23], 
+                                       colData = coldata[1:22,],design = ~Disease)
+PBMC_lnc_dds <- DESeqDataSetFromMatrix(countData = lnc_dat[,24:54], 
+                                       colData = coldata[23:53,],design = ~Disease)
+Plasma_lnc_dds <- DESeqDataSetFromMatrix(countData = lnc_dat[,55:85], 
+                                         colData = coldata[54:84,],design = ~Disease)
+sizeFactors(FFPE_lnc_dds) <- sizeFactors(FFPE_dds)
+sizeFactors(PBMC_lnc_dds) <- sizeFactors(PBMC_dds)
+sizeFactors(Plasma_lnc_dds) <- sizeFactors(Plasma_dds)
+
+FFPE_lnc_dds <- DESeq(FFPE_lnc_dds,parallel = T)
+PBMC_lnc_dds <- DESeq(PBMC_lnc_dds,parallel = T)
+Plasma_lnc_dds <- DESeq(Plasma_lnc_dds,parallel = T)
+
+FFPE_lnc_HR <- DESeqDataSetFromMatrix(countData = lnc_dat[,10:23],
+                                     colData = coldata[9:22,],design = ~Disease+HR+Disease:HR)
+PBMC_lnc_HR <- DESeqDataSetFromMatrix(countData = lnc_dat[,39:54],
+                                     colData = coldata[38:53,],design = ~Disease+HR+Disease:HR)
+Plasma_lnc_HR <- DESeqDataSetFromMatrix(countData = lnc_dat[,70:85],
+                                       colData = coldata[69:84,],design = ~Disease+HR+Disease:HR)
+sizeFactors(FFPE_lnc_HR) <- sizeFactors(FFPE_lnc_dds)[9:22]
+sizeFactors(PBMC_lnc_HR) <- sizeFactors(PBMC_lnc_dds)[16:31]
+sizeFactors(Plasma_lnc_HR) <- sizeFactors(Plasma_lnc_dds)[16:31]
+FFPE_lnc_HR <- DESeq(FFPE_lnc_HR,parallel = T)
+PBMC_lnc_HR <- DESeq(PBMC_lnc_HR,parallel = T)
+Plasma_lnc_HR <- DESeq(Plasma_lnc_HR,parallel = T)
 
 #function for volcano plot
 plot_volcano<-function(dat_non_sig,dat_sig,x_lim,y_lim,xlab_seq,
@@ -166,16 +190,18 @@ plot_volcanoS<-function(dat_non_sig,dat_sig,x_lim,y_lim,xlab_seq,ylab_seq,type){
 }
 ```
 ```{r}
-# generate results for pair-wise comparason
+# generate results for pair-wise comparison
 # Between diseases/tissues/HR
-# function of generate results
-# Combins all result dataframes to a list
-res_convert<-function(comp_arg, pro_odj, snc_obj){
+# function of generating results
+# Combine all result data.frames to a list
+res_convert<-function(comp_arg, pro_odj, snc_obj,lnc_obj){
   res<-data.frame(results(pro_odj,contrast = comp_arg, alpha = 0.05))
-  res<-cbind(res,pro_dat[,c(1,89)])
+  res<-cbind(res,pro_dat[,c(1,87)])
   res_snc<-data.frame(results(snc_obj,contrast = comp_arg, alpha = 0.05))
-  res_snc<-cbind(res_snc,snc_dat[,c(1,89)])
-  res<-rbind(res,res_snc)
+  res_snc<-cbind(res_snc,snc_dat[,c(1,87)])
+  res_lnc<-data.frame(results(lnc_obj,contrast = comp_arg, alpha = 0.05))
+  res_lnc<-cbind(res_lnc,lnc_dat[,c(1,87)])
+  res<-rbind(res,res_snc,res_lnc)
   res<-res[complete.cases(res),]
   res$log10padj<-log10(1/res$padj)
   return(res)
@@ -183,85 +209,94 @@ res_convert<-function(comp_arg, pro_odj, snc_obj){
 #  01-06, FFPE_dds and FFPE_snc_dds
 # 01. Frozen tissue; nonIBC vs Healthy (4:4)
 comp <- c("Disease","F_nonIBC","Healthy")
-comp_res<-list(res_01=res_convert(comp, FFPE_dds, FFPE_snc_dds))
+comp_res<-list(res_01=res_convert(comp, FFPE_dds, FFPE_snc_dds,FFPE_lnc_dds))
 
 # 02 FFPE; IBC vs nonIBC (10:4)
 comp <- c("Disease","IBC","nonIBC")
-comp_res$res_02<-res_convert(comp, FFPE_dds, FFPE_snc_dds)
+comp_res$res_02<-res_convert(comp, FFPE_dds, FFPE_snc_dds,FFPE_lnc_dds)
 
 # 03 FFPE IBC vs Frozen Healthy (10:4)
 comp <- c("Disease","IBC","Healthy")
-comp_res$res_03<-res_convert(comp, FFPE_dds, FFPE_snc_dds)
+comp_res$res_03<-res_convert(comp, FFPE_dds, FFPE_snc_dds,FFPE_lnc_dds)
 
 # 04 FFPE IBC vs Frozen nonIBC (10:4)
 comp <- c("Disease","IBC","F_nonIBC")
-comp_res$res_04<-res_convert(comp, FFPE_dds, FFPE_snc_dds)
+comp_res$res_04<-res_convert(comp, FFPE_dds, FFPE_snc_dds,FFPE_lnc_dds)
 
 # 05 FFPE nonIBC vs Frozen Healthy (4:4)
 comp <- c("Disease","nonIBC","Healthy")
-comp_res$res_05<-res_convert(comp, FFPE_dds, FFPE_snc_dds)
+comp_res$res_05<-res_convert(comp, FFPE_dds, FFPE_snc_dds,FFPE_lnc_dds)
 
 # 06 FFPE nonIBC vs Frozen nonIBC (4:4)
 comp <- c("Disease","nonIBC","F_nonIBC")
-comp_res$res_06<-res_convert(comp, FFPE_dds, FFPE_snc_dds)
+comp_res$res_06<-res_convert(comp, FFPE_dds, FFPE_snc_dds,FFPE_lnc_dds)
 
 # 07-09, PBMC_dds and PBMC_snc_dds
-# 07 PBMC IBC vs Healthy (10:16)
+# 07 PBMC IBC vs Healthy (10:15)
 comp <- c("Disease","IBC","Healthy")
-comp_res$res_07<-res_convert(comp, PBMC_dds, PBMC_snc_dds)
+comp_res$res_07<-res_convert(comp, PBMC_dds, PBMC_snc_dds,PBMC_lnc_dds)
 
 # 08 PBMC IBC vs nonIBC (10:6)
 comp <- c("Disease","IBC","nonIBC")
-comp_res$res_08<-res_convert(comp, PBMC_dds, PBMC_snc_dds)
+comp_res$res_08<-res_convert(comp, PBMC_dds, PBMC_snc_dds,PBMC_lnc_dds)
 
-# 09 PBMC nonIBC vs Healthy (6:16)
+# 09 PBMC nonIBC vs Healthy (6:15)
 comp <- c("Disease","nonIBC","Healthy")
-comp_res$res_09<-res_convert(comp, PBMC_dds, PBMC_snc_dds)
+comp_res$res_09<-res_convert(comp, PBMC_dds, PBMC_snc_dds,PBMC_lnc_dds)
 
 # 10-12, Plasma_dds and Plasma_snc_dds
-# 10 Plasma IBC vs Healthy (10:16)
+# 10 Plasma IBC vs Healthy (10:15)
 comp <- c("Disease","IBC","Healthy")
-comp_res$res_10<-res_convert(comp, Plasma_dds, Plasma_snc_dds)
+comp_res$res_10<-res_convert(comp, Plasma_dds, Plasma_snc_dds,Plasma_lnc_dds)
 
 # 11 Plasma IBC vs nonIBC (10:6)
 comp <- c("Disease","IBC","nonIBC")
-comp_res$res_11<-res_convert(comp, Plasma_dds, Plasma_snc_dds)
+comp_res$res_11<-res_convert(comp, Plasma_dds, Plasma_snc_dds,Plasma_lnc_dds)
 
-# 12 Plasma nonIBC vs Healthy (6:16)
+# 12 Plasma nonIBC vs Healthy (6:15)
 comp <- c("Disease","nonIBC","Healthy")
-comp_res$res_12<-res_convert(comp, Plasma_dds, Plasma_snc_dds)
+comp_res$res_12<-res_convert(comp, Plasma_dds, Plasma_snc_dds,Plasma_lnc_dds)
 
 # HR results HR+ vs HR-
 # HR_01, FFPE nonIBC
 # as shown by resultsNames, the main effect is HR+ vs HR- in nonIBC
 comp <- c("HR","P","N")
-comp_res$HR_01 <- res_convert(comp, FFPE_HR, FFPE_snc_HR)
+comp_res$HR_01 <- res_convert(comp, FFPE_HR, FFPE_snc_HR,FFPE_lnc_HR)
 # HR_02, FFPE IBC
 # use the list of contrast to get IBC HR+ vs HR-
 comp <- list(c("HR_P_vs_N","DiseaseIBC.HRP"))
-comp_res$HR_02 <- res_convert(comp, FFPE_HR, FFPE_snc_HR)
+comp_res$HR_02 <- res_convert(comp, FFPE_HR, FFPE_snc_HR,FFPE_lnc_HR)
 
 # HR_03, PBMC nonIBC
 comp <- c("HR","P","N")
-comp_res$HR_03 <- res_convert(comp, PBMC_HR, PBMC_snc_HR)
+comp_res$HR_03 <- res_convert(comp, PBMC_HR, PBMC_snc_HR,PBMC_lnc_HR)
 # HR_04, PBMC IBC
 comp <- list(c("HR_P_vs_N","DiseaseIBC.HRP"))
-comp_res$HR_04 <- res_convert(comp, PBMC_HR, PBMC_snc_HR)
+comp_res$HR_04 <- res_convert(comp, PBMC_HR, PBMC_snc_HR,PBMC_lnc_HR)
 
 # HR_05, Plasma nonIBC
 comp <- c("HR","P","N")
-comp_res$HR_05 <- res_convert(comp, Plasma_HR, Plasma_snc_HR)
+comp_res$HR_05 <- res_convert(comp, Plasma_HR, Plasma_snc_HR,Plasma_lnc_HR)
 # HR_06, Plasma IBC
 comp <- list(c("HR_P_vs_N","DiseaseIBC.HRP"))
-comp_res$HR_06 <- res_convert(comp, Plasma_HR, Plasma_snc_HR)
+comp_res$HR_06 <- res_convert(comp, Plasma_HR, Plasma_snc_HR,Plasma_lnc_HR)
 
-# combined vst counts for heatmap
-comp_vst<-list(FFPE=rbind(assay(FFPE_vst),assay(FFPE_snc_vst)))
-comp_vst$PBMC<-rbind(assay(PBMC_vst),assay(PBMC_snc_vst))
-comp_vst$Plasma<-rbind(assay(Plasma_vst),assay(Plasma_snc_vst))
-comp_vst$FFPE_HR<-rbind(assay(FFPE_HR_vst),assay(FFPE_snc_HR_vst))
-comp_vst$PBMC_HR<-rbind(assay(PBMC_HR_vst),assay(PBMC_snc_HR_vst))
-comp_vst$Plasma_HR<-rbind(assay(Plasma_HR_vst),assay(Plasma_snc_HR_vst))
+# combined normalized counts for heatmap
+comp_vst<-list(FFPE=rbind(counts(FFPE_dds, normalized=TRUE),counts(FFPE_snc_dds, normalized=TRUE),
+                          counts(FFPE_lnc_dds, normalized=TRUE)))
+comp_vst$PBMC<-rbind(counts(PBMC_dds, normalized=TRUE),counts(PBMC_snc_dds, normalized=TRUE),
+                          counts(PBMC_lnc_dds, normalized=TRUE))
+comp_vst$Plasma<-rbind(counts(Plasma_dds, normalized=TRUE),counts(Plasma_snc_dds, normalized=TRUE),
+                          counts(Plasma_lnc_dds, normalized=TRUE))
+comp_vst$FFPE_HR<-rbind(counts(FFPE_HR, normalized=TRUE),
+                        counts(FFPE_snc_HR, normalized=TRUE),
+                        counts(FFPE_lnc_HR, normalized=TRUE))
+comp_vst$PBMC_HR<-rbind(counts(PBMC_HR, normalized=TRUE),
+                        counts(PBMC_snc_HR, normalized=TRUE),
+                        counts(PBMC_lnc_HR, normalized=TRUE))
+comp_vst$Plasma_HR<-rbind(counts(Plasma_HR, normalized=TRUE),
+                        counts(Plasma_snc_HR, normalized=TRUE),
+                        counts(Plasma_lnc_HR, normalized=TRUE))
 
 save.image("IBC.image")
 ```
@@ -310,8 +345,8 @@ plot_volcanoS(non_sig,sig,c(-20,20),c(0,15),seq(-20,20,5),seq(0,15,5),"pro")
 snc<-subset(comp_res[[1]],Type2!="Protein coding")
 snc$Type2<-droplevels(snc$Type2)
 non_sig<-subset(snc, padj>0.001 | abs(log2FoldChange)<2)
-heat_sig<-rbind(sig,subset(snc, padj<=0.001 & abs(log2FoldChange)>=2))
 sig<-subset(snc, padj<=0.001 & abs(log2FoldChange)>=2)
+heat_sig<-rbind(sig,subset(snc, padj<=0.001 & abs(log2FoldChange)>=2))
 plot_volcanoS(non_sig,sig,c(-10,25),c(0,30),seq(-10,25,5),seq(0,30,10),"snc")
 dev.off()
 #heatmap
@@ -826,4 +861,39 @@ pheatmap(as.matrix(mat[,1:10]), annotation_col = coldata[,1:2],cluster_rows = F,
          fontsize_row =5, cluster_cols = F,labels_row = mat$Name, show_colnames = F)
 dev.off()
 ```
+## CDS, sense_antisense plots
+```{r,echo=FALSE}
+#Protein coding reads, #of sense and antisense
+#Protein coding reads, #of sense and antisense
 
+scol <- brewer.pal(4, "Set1")
+sense_anti<-read.delim("protein_sense_anti.txt")
+rownames(sense_anti)<-c("Sense","Antisense")
+CDS<-read.delim("CDS.txt")
+rownames(CDS)<-c("CDS","UTR","Intron","Intergenic")
+
+sense_anti<-prop.table(as.matrix(sense_anti),2)
+CDS<-prop.table(as.matrix(CDS),2)
+
+pdf("IBC_protein_reads.pdf",width=11,height=8)
+par(mfrow=c(2,1))
+mp<-barplot(as.matrix(sense_anti[,c(1:84)]*100),col=scol,axes=F,
+            names.arg=rep(NA,84),
+            width=0.15,
+            space=0.5,
+            legend.text=c("Sense strand","Antisense strand"),
+            adj=0,args.legend=list(x=19,xjust=0,y=50,yjust=0.5,bty="n",cex=0.7),xlim=c(0,21))
+mtext("Protein coding reads",line=1.4,at=median(mp[1:84]),cex=1.5)
+axis(1,labels=NA,at=mp,lwd=0,lwd.ticks=1)
+axis(2,labels=c(0,25,50,75,100),las=1,at=c(0,25,50,75,100),pos=0,cex.axis=0.7)
+
+mp<-barplot(as.matrix(CDS[,c(1:84)]*100),col=scol,axes=F,
+            names.arg=rep(NA,84),
+            width=0.15,
+            space=0.5,
+            legend.text=rownames(CDS),
+            adj=0,args.legend=list(x=19,xjust=0,y=50,yjust=0.5,bty="n",cex=0.7),xlim=c(0,21))
+axis(1,labels=NA,at=mp,lwd=0,lwd.ticks=1)
+axis(2,labels=c(0,25,50,75,100),las=1,at=c(0,25,50,75,100),pos=0,cex.axis=0.7)
+dev.off()
+```
